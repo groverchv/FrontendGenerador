@@ -26,11 +26,15 @@ import "reactflow/dist/style.css";
 import Sidebar from "./sidebar/sidebar";
 import EntidadPanel from "./components/entidad";
 import RelacionarPanel from "./components/relacionar";
+import Iaclase from "./components/iaclase";
 
 import { buildPrompt } from "./generador/promt";
 import { makeSkeleton } from "./generador/skeleton";
 import { generateSpringBootCode } from "./services/gemine";
 import { downloadAsZip } from "./generador/zip";
+
+import { buildPrompt2 } from "./generador/promt2";
+import { getDeltaFromUserText } from "./services/iaDelta";
 
 import { ProjectsApi } from "../../../api/projects";
 
@@ -80,6 +84,32 @@ const midpoint = (a, b) => ({
   x: ((a?.position?.x ?? 100) + (b?.position?.x ?? 100)) / 2,
   y: ((a?.position?.y ?? 100) + (b?.position?.y ?? 100)) / 2,
 });
+
+/* ===== Multiplicidades ===== */
+const normalizeMult = (m) => {
+  const v = String(m || "1").replace(/\s/g, "");
+  if (v === "N" || v === "*") return "*";
+  if (v === "1..*" || v === "1.*") return "1..*";
+  if (v === "0..*" || v === "0.*") return "0..*";
+  if (v === "0..1" || v === "0.1") return "0..1";
+  if (v === "1") return "1";
+  // Fallbacks
+  if (/^\d+\.\.\*$/.test(v)) return "1..*";
+  return "*";
+};
+
+const decideRelType = (mA, mB) => {
+  const A = normalizeMult(mA), B = normalizeMult(mB);
+  const isMany = (x) => x === "1..*" || x === "0..*" || x === "*";
+  if (!isMany(A) && !isMany(B)) return "1-1";
+  if (!isMany(A) && isMany(B)) return "1-N";
+  if (isMany(A) && !isMany(B)) return "N-1";
+  if (A === "0..1" && !isMany(B)) return "0-1";
+  if (!isMany(A) && A === "1" && B === "0..1") return "1-0";
+  if (A === "0..1" && isMany(B)) return "0-N";
+  if (isMany(A) && B === "0..1") return "N-0";
+  return "NM";
+};
 
 /* ================= EDGE UML ================= */
 function UmlEdge(props) {
@@ -472,6 +502,198 @@ const Diagramador = forwardRef(function Diagramador(
     scheduleSnapshot();
   };
 
+  /* =================== Helpers IA (modelo + aplicar acciones) =================== */
+  const modelFromState = useCallback(() => {
+    const entities = nodes.map(n => ({
+      id: n.id,
+      name: n.data?.label || n.id,
+      attrs: n.data?.attrs || []
+    }));
+
+    const relations = edges.map(e => ({
+      aId: e.source,
+      bId: e.target,
+      aName: nodes.find(n => n.id === e.source)?.data?.label || e.source,
+      bName: nodes.find(n => n.id === e.target)?.data?.label || e.target,
+      mA: e.data?.mA, mB: e.data?.mB,
+      verb: e.data?.verb || "",
+      relType: e.data?.relType || ""
+    }));
+
+    return { entities, relations, joinTables: [] };
+  }, [nodes, edges]);
+
+  const findByName = (name) =>
+    nodes.find(n => (n.data?.label || "").toLowerCase() === String(name).toLowerCase());
+
+  const ensureEntity = (name, atts = []) => {
+    const ex = findByName(name);
+    if (ex) {
+      if (atts?.length) {
+        setNodes(ns => ns.map(n => {
+          if (n.id !== ex.id) return n;
+          const map = new Map((n.data?.attrs || []).map(a => [a.name.toLowerCase(), a]));
+          for (const a of atts) {
+            if (!a?.name) continue;
+            const k = a.name.toLowerCase();
+            if (map.has(k)) map.set(k, { ...map.get(k), type: a.type || map.get(k).type });
+            else map.set(k, { name: a.name, type: a.type || "String" });
+          }
+          return { ...n, data: { ...n.data, attrs: Array.from(map.values()) } };
+        }));
+        scheduleSnapshot();
+      }
+      return ex.id;
+    }
+    const id = "n" + Date.now() + Math.random().toString(36).slice(2, 6);
+    const x = 120 + nodes.length * 40;
+    const y = 120 + nodes.length * 30;
+    setNodes(ns => ns.concat({
+      id,
+      type: "classNode",
+      position: { x, y },
+      data: { label: name, attrs: atts || [] }
+    }));
+    scheduleSnapshot();
+    return id;
+  };
+
+  const addEdgeSimple = (aId, bId, mA, mB, verb) => {
+    const relType = decideRelType(mA, mB);
+    const id = "e" + Date.now() + Math.random().toString(36).slice(2, 6);
+    setEdges(es => es.concat({
+      id,
+      source: aId,
+      target: bId,
+      type: "uml",
+      label: verb || "",
+      data: { mA: normalizeMult(mA), mB: normalizeMult(mB), verb: verb || "", relType }
+    }));
+  };
+
+  const addRelationNM = (aId, bId, joinNameOpt) => {
+    const A = nodes.find(n => n.id === aId);
+    const B = nodes.find(n => n.id === bId);
+    if (!A || !B) return;
+
+    const joinName = (joinNameOpt && joinNameOpt.trim())
+      || `${toSnake(A.data?.label || A.id)}_${toSnake(B.data?.label || B.id)}`;
+
+    const existent = findByName(joinName);
+    const joinId = existent?.id || ("n" + Date.now());
+
+    if (!existent) {
+      const pos = midpoint(A, B);
+      const tA = inferIdType(A);
+      const tB = inferIdType(B);
+      setNodes(ns => ns.concat({
+        id: joinId,
+        type: "classNode",
+        position: { x: pos.x, y: pos.y },
+        data: {
+          label: joinName,
+          attrs: [
+            { name: `${toSnake(A.data?.label || A.id)}_id`, type: tA },
+            { name: `${toSnake(B.data?.label || B.id)}_id`, type: tB },
+          ]
+        }
+      }));
+    }
+
+    // Quitar edges A<->B directos
+    setEdges(es => es.filter(e =>
+      !((e.source === aId && e.target === bId) || (e.source === bId && e.target === aId))
+    ));
+
+    // A->join y B->join
+    const e1 = {
+      id: "e" + Date.now() + "-a",
+      source: aId, target: joinId,
+      type: "uml",
+      data: { mA: "1..*", mB: "1", relType: "1-N" }
+    };
+    const e2 = {
+      id: "e" + Date.now() + "-b",
+      source: bId, target: joinId,
+      type: "uml",
+      data: { mA: "1..*", mB: "1", relType: "1-N" }
+    };
+    setEdges(es => es.concat(e1, e2));
+  };
+
+  const removeRelationByNames = (aName, bName) => {
+    const A = findByName(aName);
+    const B = findByName(bName);
+    if (!A || !B) return;
+    setEdges(es => es.filter(e =>
+      !((e.source === A.id && e.target === B.id) || (e.source === B.id && e.target === A.id))
+    ));
+  };
+
+  const applyActions = useCallback((actions = []) => {
+    for (const act of actions) {
+      if (!act || !act.op) continue;
+
+      if (act.op === "add_entity") {
+        ensureEntity(act.name, act.attrs || []);
+      }
+      if (act.op === "update_entity") {
+        ensureEntity(act.name, act.attrs || []);
+      }
+      if (act.op === "remove_entity") {
+        const ex = findByName(act.name);
+        if (ex) removeEntity(ex.id);
+      }
+      if (act.op === "add_attr") {
+        const id = ensureEntity(act.entity);
+        if (id && act.attr?.name) {
+          ensureEntity(act.entity, [act.attr]);
+        }
+      }
+      if (act.op === "rename_entity") {
+        const ex = findByName(act.old);
+        if (ex && act.name) updateEntity(ex.id, () => ({ label: act.name }));
+      }
+      if (act.op === "add_relation") {
+        const aId = ensureEntity(act.a);
+        const bId = ensureEntity(act.b);
+        addEdgeSimple(aId, bId, act.mA || "1", act.mB || "1", act.verb || "");
+      }
+      if (act.op === "remove_relation") {
+        removeRelationByNames(act.a, act.b);
+      }
+      if (act.op === "add_relation_nm") {
+        const aId = ensureEntity(act.a);
+        const bId = ensureEntity(act.b);
+        addRelationNM(aId, bId, act.joinName);
+      }
+    }
+    scheduleSnapshot();
+  }, [nodes, edges]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* =================== IA: abrir modal y ejecutar =================== */
+  const handleIA = async (userText) => {
+    try {
+      const current = modelFromState();
+      const delta = await getDeltaFromUserText({
+        text: userText,
+        promptBuilder: buildPrompt2,
+        currentModel: current
+      });
+      if (!delta || !Array.isArray(delta.actions)) {
+        alert("La IA no devolvió acciones válidas.");
+        return false;
+      }
+      applyActions(delta.actions);
+      setIaOpen(false);
+      return true;
+    } catch (err) {
+      console.error("IA error:", err);
+      alert("Error interpretando instrucciones: " + (err?.message || ""));
+      return false;
+    }
+  };
+
   /* =================== ReactFlow handlers =================== */
   const onNodesChange = useCallback(
     (changes) => {
@@ -549,6 +771,7 @@ const Diagramador = forwardRef(function Diagramador(
           }}
           onExport={persistNow}
           onGenerate={handleGenerate}
+          onOpenIA={() => setIaOpen(true)}
         >
           {activeTab === "entidad" ? (
             <EntidadPanel
@@ -576,12 +799,12 @@ const Diagramador = forwardRef(function Diagramador(
                 })
               }
               onDelete={() => removeEntity(selectedId)}
+              onOpenIA={() => setIaOpen(true)}
             />
           ) : (
             <RelacionarPanel
               nodes={nodes}
               edges={edges}
-              /* --- Relación simple --- */
               onRelacionSimple={({ sourceId, targetId, tipo, mA, mB, verb, meta }) => {
                 const id = "e" + Date.now();
                 setEdges((es) =>
@@ -596,63 +819,11 @@ const Diagramador = forwardRef(function Diagramador(
                 );
                 scheduleSnapshot();
               }}
-              /* --- Relación N–N: crea entidad intermedia y 2 edges 1..* → 1 --- */
               onRelacionNM={({ aId, bId, nombreIntermedia, meta }) => {
-                const A = nodes.find(n => n.id === aId);
-                const B = nodes.find(n => n.id === bId);
-                if (!A || !B) { alert("No encuentro las entidades seleccionadas."); return; }
-
-                const joinName = (nombreIntermedia?.trim())
-                  || `${toSnake(A.data?.label || A.id)}_${toSnake(B.data?.label || B.id)}`;
-
-                // ¿Ya existe una entidad con ese nombre?
-                const existent = nodes.find(n => (n.data?.label || "").toLowerCase() === joinName.toLowerCase());
-                const joinId = existent?.id || ("n" + Date.now());
-
-                if (!existent) {
-                  const pos = midpoint(A, B);
-                  const tA = inferIdType(A);
-                  const tB = inferIdType(B);
-
-                  setNodes(ns => ns.concat({
-                    id: joinId,
-                    type: "classNode",
-                    position: { x: pos.x, y: pos.y },
-                    data: {
-                      label: joinName,
-                      attrs: [
-                        { name: `${toSnake(A.data?.label || A.id)}_id`, type: tA },
-                        { name: `${toSnake(B.data?.label || B.id)}_id`, type: tB },
-                      ],
-                    },
-                  }));
-                }
-
-                // Quitar cualquier edge directo A<->B previo
-                setEdges(es =>
-                  es.filter(e =>
-                    !((e.source === aId && e.target === bId) || (e.source === bId && e.target === aId))
-                  )
-                );
-
-                // Añadir A -> join y B -> join
-                const e1 = {
-                  id: "e" + Date.now() + "-a",
-                  source: aId,
-                  target: joinId,
-                  type: "uml",
-                  data: { mA: "1..*", mB: "1", relType: "1-N", ...meta },
-                };
-                const e2 = {
-                  id: "e" + Date.now() + "-b",
-                  source: bId,
-                  target: joinId,
-                  type: "uml",
-                  data: { mA: "1..*", mB: "1", relType: "1-N", ...meta },
-                };
-
-                setEdges(es => es.concat(e1, e2));
-                scheduleSnapshot();
+                const a = nodes.find(n => n.id === aId);
+                const b = nodes.find(n => n.id === bId);
+                if (!a || !b) return;
+                addRelationNM(aId, bId, nombreIntermedia);
               }}
               onUpdateEdge={(edgeId, partial) => {
                 setEdges((es) =>
@@ -668,10 +839,14 @@ const Diagramador = forwardRef(function Diagramador(
                 setEdges((es) => es.filter((e) => e.id !== edgeId));
                 scheduleSnapshot();
               }}
+              onOpenIA={() => setIaOpen(true)}
             />
           )}
         </Sidebar>
       </div>
+
+      {/* Modal IA */}
+      <Iaclase open={iaOpen} onClose={() => setIaOpen(false)} onSubmit={handleIA} />
     </div>
   );
 });

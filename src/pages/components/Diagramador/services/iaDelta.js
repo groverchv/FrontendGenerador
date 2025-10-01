@@ -1,0 +1,1 @@
+export { getDeltaFromUserText } from "./apiGemine";

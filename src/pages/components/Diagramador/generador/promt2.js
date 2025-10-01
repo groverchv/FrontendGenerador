@@ -1,4 +1,3 @@
-// generador/promt2.js
 // Prompt para que la IA COMPLETE/ACTUALICE el DIAGRAMA en base a instrucciones del usuario.
 // Debe responder SOLO un JSON con un "delta" de acciones para aplicar al grafo.
 
@@ -17,7 +16,7 @@ DEBES responder SOLO un JSON válido con la forma:
   "actions": [
     // Crear o actualizar entidades
     { "op": "add_entity", "name": "Usuario", "attrs": [ { "name": "id", "type": "Integer" }, { "name": "nombre", "type": "String" } ] },
-    { "op": "update_entity", "name": "Usuario", "attrs": [ { "name": "telefono", "type": "Integer" } ] },   // añade o cambia tipo
+    { "op": "update_entity", "name": "Usuario", "attrs": [ { "name": "telefono", "type": "Integer" } ] },
     { "op": "remove_entity", "name": "Temporal" },
 
     // Relaciones simples (no N-M)
@@ -26,7 +25,7 @@ DEBES responder SOLO un JSON válido con la forma:
     // N-M (con entidad intermedia opcional)
     { "op": "add_relation_nm", "a": "Usuario", "b": "Rol", "joinName": "Usuario_Rol" },
 
-    // Borrado de relación (si se pide)
+    // Borrar relación (si se pide)
     { "op": "remove_relation", "a": "Usuario", "b": "Perfil" }
   ]
 }
@@ -36,6 +35,7 @@ Reglas:
 - No repitas acciones que no cambian nada.
 - Si el usuario pide "genera todo", puedes incluir varias acciones.
 - Para N–M: si no se especifica joinName, usa "<A>_<B>".
+- Las multiplicidades admitidas: "1", "0..1", "1..*", "0..*", "*" (también puedes usar "N" → equivale a "*").
 
 No incluyas explicación, ni markdown. SOLO el JSON.
 
