@@ -1,0 +1,14 @@
+// src/api/api.js
+import axios from "axios";
+
+// Usa .env si existe; cae a Railway por defecto
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE || "https://backendgenerador.up.railway.app";
+
+const api = axios.create({
+  baseURL: API_BASE_URL.replace(/\/+$/, ""),
+  headers: { "Content-Type": "application/json" },
+  withCredentials: false,
+});
+
+export default api;
