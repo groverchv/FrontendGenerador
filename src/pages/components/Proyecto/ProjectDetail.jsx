@@ -19,6 +19,35 @@ export default function ProjectDetail() {
   const diagramadorRef = useRef();
   const presenceSubRef = useRef(null);
 
+  // Input para importar
+  const fileRef = useRef(null);
+
+  // ---- Exportar (PUML por defecto)
+  const handleExport = () => {
+    diagramadorRef.current?.exportPUML();
+    // Si quieres JSON por defecto: diagramadorRef.current?.exportJSON();
+  };
+
+  // ---- Importar: abre file picker
+  const handleImportClick = () => fileRef.current?.click();
+
+  // ---- Cuando seleccionan archivo
+  const onFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    const text = await file.text();
+
+    if (name.endsWith(".puml") || name.endsWith(".uml")) {
+      await diagramadorRef.current?.importFromPUMLText(text);
+    } else if (name.endsWith(".json")) {
+      await diagramadorRef.current?.importFromJSONText(text);
+    } else {
+      alert("Formato no soportado. Usa .puml/.uml o .json exportados por la app.");
+    }
+    e.target.value = ""; // permite re-seleccionar el mismo archivo
+  };
+
   // Carga proyecto + diagrama
   useEffect(() => {
     (async () => {
@@ -39,7 +68,6 @@ export default function ProjectDetail() {
     let active = true;
     if (!id) return;
 
-    // Sockend ya conoce la baseURL y usa SockJS
     const s = new Sockend({ debug: false });
 
     (async () => {
@@ -48,7 +76,6 @@ export default function ProjectDetail() {
         if (!active) return;
         setSock(s);
 
-        // 1) Suscripción a presencia
         const presenceTopic = `/topic/projects/${id}/presence`;
         presenceSubRef.current = s.subscribe(presenceTopic, (msg) => {
           if (msg && (msg.__system === "presence" || typeof msg.online === "number")) {
@@ -56,16 +83,12 @@ export default function ProjectDetail() {
           }
         });
 
-        // 2) Entrar a la sala (y re-entrar cuando reconecte)
         const enter = () => s.send(`/app/projects/${id}/presence.enter`, "", { critical: true });
         enter();
         const off = s.onConnect(() => enter());
 
-        // Cleanup del callback de reconexión
         return () => {
-          try {
-            off?.();
-          } catch {}
+          try { off?.(); } catch {}
         };
       } catch (err) {
         console.error("WS connect error:", err);
@@ -74,15 +97,9 @@ export default function ProjectDetail() {
 
     return () => {
       active = false;
-      try {
-        s.send(`/app/projects/${id}/presence.leave`, "");
-      } catch {}
-      try {
-        if (presenceSubRef.current) s.unsubscribe(presenceSubRef.current);
-      } catch {}
-      try {
-        s.close();
-      } catch {}
+      try { s.send(`/app/projects/${id}/presence.leave`, ""); } catch {}
+      try { if (presenceSubRef.current) s.unsubscribe(presenceSubRef.current); } catch {}
+      try { s.close(); } catch {}
     };
   }, [id]);
 
@@ -107,7 +124,19 @@ export default function ProjectDetail() {
         onlineCount={onlineCount}
         onSave={() => diagramadorRef.current?.persistNow()}
         onGenerate={() => diagramadorRef.current?.handleGenerate()}
+        onExport={handleExport}          // Exportar PUML
+        onImport={handleImportClick}     // Importar PUML/JSON
       />
+
+      {/* input oculto para importar (PUML/JSON) */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".puml,.uml,.json"
+        className="hidden"
+        onChange={onFileSelected}
+      />
+
       <div className="flex-1 min-h-0">
         {diagramId ? (
           <Diagramador

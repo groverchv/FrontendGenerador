@@ -1,3 +1,4 @@
+// src/views/proyectos/Diagramador/Diagramador.jsx
 import {
   forwardRef,
   useCallback,
@@ -67,6 +68,19 @@ function debounce(fn, wait = 250) {
   };
 }
 
+/* --- util descarga de texto como archivo --- */
+function downloadText(filename, text) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /* ====== Helpers N–N / nombres / posiciones ====== */
 const toSnake = (s = "") =>
   (s || "")
@@ -87,15 +101,16 @@ const midpoint = (a, b) => ({
 
 /* ===== Multiplicidades ===== */
 const normalizeMult = (m) => {
-  const v = String(m || "1").replace(/\s/g, "");
-  if (v === "N" || v === "*") return "*";
+  if (m == null) return "1";
+  const v = String(m).trim().replace(/\s/g, "");
+  if (!v) return "1";
+  if (v === "N" || v === "*" || v === "n") return "*";
   if (v === "1..*" || v === "1.*") return "1..*";
   if (v === "0..*" || v === "0.*") return "0..*";
   if (v === "0..1" || v === "0.1") return "0..1";
   if (v === "1") return "1";
-  // Fallbacks
   if (/^\d+\.\.\*$/.test(v)) return "1..*";
-  return "*";
+  return v; // deja pasar si vino algo custom
 };
 
 const decideRelType = (mA, mB) => {
@@ -384,7 +399,202 @@ const Diagramador = forwardRef(function Diagramador(
     }
   }, [projectName, nodes, edges]);
 
-  useImperativeHandle(ref, () => ({ persistNow, handleGenerate }));
+  /* =================== Exportar / Importar =================== */
+  const exportJSON = useCallback(() => {
+    const payload = {
+      version: versionRef.current ?? 1,
+      projectId,
+      projectName,
+      savedAt: new Date().toISOString(),
+      nodes,
+      edges,
+    };
+    const file = `${(projectName || "proyecto").replace(/[^\w.-]+/g, "_")}.diagram.json`;
+    downloadText(file, JSON.stringify(payload, null, 2));
+  }, [nodes, edges, projectId, projectName]);
+
+  const exportPUML = useCallback(() => {
+    const classes = nodes.map(n => {
+      const name = n.data?.label || n.id;
+      const attrs = (n.data?.attrs || [])
+        .map(a => `  ${a.name}: ${a.type || "String"}`)
+        .join("\n");
+      return `class ${name} {\n${attrs}\n}`;
+    }).join("\n\n");
+
+    const rels = edges.map(e => {
+      const a = nodes.find(n => n.id === e.source);
+      const b = nodes.find(n => n.id === e.target);
+      if (!a || !b) return "";
+      const A = a.data?.label || a.id;
+      const B = b.data?.label || b.id;
+      const mA = normalizeMult(e.data?.mA || "1");
+      const mB = normalizeMult(e.data?.mB || "1");
+      const verb = e.data?.verb || "";
+      return `${A} "${mA}" -- "${mB}" ${B}${verb ? ` : ${verb}` : ""}`;
+    }).filter(Boolean).join("\n");
+
+    const puml = `@startuml
+skinparam classAttributeIconSize 0
+
+${classes}
+
+${rels}
+@enduml
+`;
+    const file = `${(projectName || "proyecto").replace(/[^\w.-]+/g, "_")}.puml`;
+    downloadText(file, puml);
+  }, [nodes, edges, projectName]);
+
+  // --------- IMPORTAR DESDE PUML ----------
+  const importFromPUMLText = useCallback(async (text) => {
+    try {
+      // 1) Quitar comentarios y preámbulo/epílogo
+      const cleaned = text
+        .replace(/\/\*[^]*?\*\//g, "")   // /* comentarios */
+        .replace(/'[^]*?$/gm, "")        // ' comentarios de línea
+        .replace(/@startuml[^]*?\n/i, "") // remover encabezado
+        .replace(/@enduml[^]*$/i, "");    // remover final
+
+      // 2) Parsear clases
+      const classRegex = /(?:class|entity)\s+([A-Za-z_]\w*)\s*\{([^]*?)\}/g;
+      const foundClasses = [];
+      let m;
+      while ((m = classRegex.exec(cleaned)) !== null) {
+        const name = m[1];
+        const body = m[2] || "";
+        const attrs = body
+          .split(/\r?\n/)
+          .map(l => l.trim())
+          .filter(l => l && !l.startsWith("//") && !l.startsWith("'"))
+          .map(l => {
+            // formato esperado: nombre: Tipo
+            const mm = l.match(/^([A-Za-z_]\w*)\s*:\s*([^;{]+)$/);
+            if (!mm) return null;
+            return { name: mm[1], type: mm[2].trim() };
+          })
+          .filter(Boolean);
+        foundClasses.push({ name, attrs });
+      }
+
+      // 3) Si no hay bloques, intenta "class Nombre" en línea
+      const singleClassRegex = /^\s*(?:class|entity)\s+([A-Za-z_]\w*)\s*$/gm;
+      let sm;
+      while ((sm = singleClassRegex.exec(cleaned)) !== null) {
+        const name = sm[1];
+        if (!foundClasses.find(c => c.name === name)) {
+          foundClasses.push({ name, attrs: [] });
+        }
+      }
+
+      // 4) Construir nodos (ubicar en grilla)
+      const GRID_X = 260, GRID_Y = 160, COLS = 4;
+      const nodesMap = new Map();
+      const newNodes = foundClasses.map((c, i) => {
+        const id = "n_" + c.name;
+        nodesMap.set(c.name, id);
+        return {
+          id,
+          type: "classNode",
+          position: { x: 60 + (i % COLS) * GRID_X, y: 60 + Math.floor(i / COLS) * GRID_Y },
+          data: { label: c.name, attrs: c.attrs || [] },
+        };
+      });
+
+      // 5) Parsear relaciones:  A "mA" -- "mB" B : verbo
+      // comillas en multiplicidades opcionales
+      const relRegex = /^\s*([A-Za-z_]\w*)\s*("?)([^"]*?)\2\s*--\s*("?)([^"]*?)\4\s*([A-Za-z_]\w*)(?:\s*:\s*([^\n]+))?/gm;
+      const newEdges = [];
+      let r;
+      while ((r = relRegex.exec(cleaned)) !== null) {
+        const aName = r[1];
+        const mA = r[3]?.trim();
+        const mB = r[5]?.trim();
+        const bName = r[6];
+        const verb = (r[7] || "").trim();
+
+        const aId = nodesMap.get(aName) || ("n_" + aName);
+        const bId = nodesMap.get(bName) || ("n_" + bName);
+
+        // Si aparecieron en relaciones pero no en clases, créalos sin attrs
+        if (!nodesMap.has(aName)) {
+          nodesMap.set(aName, aId);
+          newNodes.push({
+            id: aId,
+            type: "classNode",
+            position: { x: 60 + (newNodes.length % COLS) * GRID_X, y: 60 + Math.floor(newNodes.length / COLS) * GRID_Y },
+            data: { label: aName, attrs: [] },
+          });
+        }
+        if (!nodesMap.has(bName)) {
+          nodesMap.set(bName, bId);
+          newNodes.push({
+            id: bId,
+            type: "classNode",
+            position: { x: 60 + (newNodes.length % COLS) * GRID_X, y: 60 + Math.floor(newNodes.length / COLS) * GRID_Y },
+            data: { label: bName, attrs: [] },
+          });
+        }
+
+        const relType = decideRelType(mA, mB);
+        newEdges.push({
+          id: "e" + newEdges.length + "_" + Date.now(),
+          source: aId,
+          target: bId,
+          type: "uml",
+          data: { mA: normalizeMult(mA || "1"), mB: normalizeMult(mB || "1"), verb, relType },
+        });
+      }
+
+      setNodes(newNodes);
+      setEdges(newEdges);
+
+      // Persistir y notificar a otros
+      await ProjectsApi.updateDiagram(projectId, {
+        name: "Principal",
+        nodes: JSON.stringify(newNodes),
+        edges: JSON.stringify(newEdges),
+        viewport: null,
+      });
+      publishSnapshot();
+      alert("✅ PUML importado y guardado.");
+    } catch (err) {
+      console.error("Import PUML error:", err);
+      alert("❌ No se pudo importar el .puml: " + (err?.message || "desconocido"));
+    }
+  }, [projectId, setNodes, setEdges, publishSnapshot]);
+
+  const importFromJSONText = useCallback(async (text) => {
+    try {
+      const data = JSON.parse(text);
+      const n = Array.isArray(data.nodes) ? data.nodes : [];
+      const e = Array.isArray(data.edges) ? data.edges : [];
+      setNodes(n);
+      setEdges(e);
+      versionRef.current = (data.version ?? versionRef.current) || null;
+
+      await ProjectsApi.updateDiagram(projectId, {
+        name: "Principal",
+        nodes: JSON.stringify(n),
+        edges: JSON.stringify(e),
+        viewport: null,
+      });
+      publishSnapshot();
+      alert("✅ Diagrama importado y guardado.");
+    } catch (err) {
+      console.error("Import JSON error:", err);
+      alert("❌ No se pudo importar el JSON: " + (err?.message || "desconocido"));
+    }
+  }, [projectId, setNodes, setEdges, publishSnapshot]);
+
+  useImperativeHandle(ref, () => ({
+    persistNow,
+    handleGenerate,
+    exportJSON,
+    exportPUML,
+    importFromJSONText,
+    importFromPUMLText,
+  }));
 
   /* =================== MOVIMIENTOS: throttle =================== */
   const sendMoveThrottled = useMemo(
@@ -600,12 +810,10 @@ const Diagramador = forwardRef(function Diagramador(
       }));
     }
 
-    // Quitar edges A<->B directos
     setEdges(es => es.filter(e =>
       !((e.source === aId && e.target === bId) || (e.source === bId && e.target === aId))
     ));
 
-    // A->join y B->join
     const e1 = {
       id: "e" + Date.now() + "-a",
       source: aId, target: joinId,
@@ -645,10 +853,7 @@ const Diagramador = forwardRef(function Diagramador(
         if (ex) removeEntity(ex.id);
       }
       if (act.op === "add_attr") {
-        const id = ensureEntity(act.entity);
-        if (id && act.attr?.name) {
-          ensureEntity(act.entity, [act.attr]);
-        }
+        ensureEntity(act.entity, [act.attr]);
       }
       if (act.op === "rename_entity") {
         const ex = findByName(act.old);

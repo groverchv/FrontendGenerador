@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ProjectsApi } from "../../../api/projects";
-import { DiagramsApi } from "../../../api/diagrams"; // 🔹 Nuevo import
+import { DiagramsApi } from "../../../api/diagrams";
 import ReactFlow, {
   Background,
   BaseEdge,
