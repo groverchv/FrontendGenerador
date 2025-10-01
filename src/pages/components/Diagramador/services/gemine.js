@@ -10,7 +10,7 @@
 const GEMINI_API_KEY =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_GEMINI_API_KEY) ||
   (typeof window !== "undefined" && window.GEMINI_API_KEY) ||
-  "AIzaSyBTct2sRa6kNSymNR_HESJeQvb4esSkmPQ"; // <-- tu API key (si decides hardcodear)
+  "AIzaSyA2GflIktQZgODfQT5w-ZNGGMxIg60VsTU"; // <-- tu API key (si decides hardcodear)
 
 const MODEL = "gemini-1.5-flash"; // o "gemini-1.5-pro"
 

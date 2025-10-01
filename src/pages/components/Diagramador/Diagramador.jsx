@@ -35,6 +35,35 @@ import { downloadAsZip } from "./generador/zip";
 
 import { ProjectsApi } from "../../../api/projects";
 
+/* ============== Utilidades ============== */
+function throttle(fn, wait = 60) {
+  let last = 0;
+  let t = null;
+  let lastArgs = null;
+  return (...args) => {
+    const now = Date.now();
+    if (now - last >= wait) {
+      last = now;
+      fn(...args);
+    } else {
+      lastArgs = args;
+      clearTimeout(t);
+      t = setTimeout(() => {
+        last = Date.now();
+        fn(...lastArgs);
+      }, wait - (now - last));
+    }
+  };
+}
+
+function debounce(fn, wait = 250) {
+  let t = null;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), wait);
+  };
+}
+
 /* ================= EDGE UML ================= */
 function UmlEdge(props) {
   const {
@@ -140,18 +169,28 @@ const Diagramador = forwardRef(function Diagramador(
   const destUpdate = useMemo(() => `/app/projects/${projectId}/update`, [projectId]);
   const destCursor = useMemo(() => `/app/projects/${projectId}/cursor`, [projectId]);
 
-  // ---- Refs
-  const posTsRef = useRef(new Map()); // nodeId -> ts último move (remoto)
-  const lastSeqRef = useRef(new Map()); // nodeId -> seq último
-  const seqCounterRef = useRef(0); // contador local cursores
-  const isDraggingRef = useRef(false);
-  const queuedPatchRef = useRef(null);
-  const lastMoveRef = useRef(null); // última pos local (en drag)
+  // ---- Seq para movimientos (evitar fuera de orden)
+  const lastSeqRef = useRef(new Map()); // nodeId -> last seq recibido
+  const seqCounterRef = useRef(0);
 
-  // rAF
-  const rafSendIdRef = useRef(0); // envío local cada frame
-  const rafApplyIdRef = useRef(0); // interpolación remota cada frame
-  const peersRef = useRef(new Map()); // id -> { tx, ty }
+  // ---- Debounce de snapshots
+  const publishSnapshot = useCallback(() => {
+    if (!sock) return;
+    const payload = {
+      type: "diagram.snapshot",
+      clientId: clientIdRef.current,
+      baseVersion: versionRef.current,
+      name: "Principal",
+      nodes: JSON.stringify(nodes),
+      edges: JSON.stringify(edges),
+    };
+    sock.send(destUpdate, payload);
+  }, [sock, nodes, edges, destUpdate]);
+
+  const scheduleSnapshot = useMemo(
+    () => debounce(publishSnapshot, 250),
+    [publishSnapshot]
+  );
 
   // =================== Carga inicial ===================
   useEffect(() => {
@@ -168,38 +207,23 @@ const Diagramador = forwardRef(function Diagramador(
     })();
   }, [projectId, setNodes, setEdges]);
 
-  // =================== Persistencia explícita ===================
-  const publishPatchNow = useCallback(() => {
-    if (!sock) return;
-    const payload = {
-      clientId: clientIdRef.current,
-      baseVersion: versionRef.current,
-      name: "Principal",
-      nodes: JSON.stringify(nodes),
-      edges: JSON.stringify(edges),
-    };
-    try {
-      sock.send(destUpdate, payload, { critical: true });
-    } catch {}
-  }, [sock, nodes, edges, destUpdate]);
-
+  // =================== Persistencia explícita (botón Guardar) ===================
   const persistNow = useCallback(async () => {
     try {
-      if (projectId) {
-        await ProjectsApi.updateDiagram(projectId, {
-          name: "Principal",
-          nodes: JSON.stringify(nodes),
-          edges: JSON.stringify(edges),
-          viewport: null,
-        });
-        publishPatchNow();
-        alert("✅ Diagrama guardado correctamente.");
-      }
+      if (!projectId) return;
+      await ProjectsApi.updateDiagram(projectId, {
+        name: "Principal",
+        nodes: JSON.stringify(nodes),
+        edges: JSON.stringify(edges),
+        viewport: null,
+      });
+      publishSnapshot();
+      alert("✅ Diagrama guardado correctamente.");
     } catch (e) {
       console.error("Error guardando", e);
       alert("❌ Error guardando cambios en el diagrama.");
     }
-  }, [projectId, nodes, edges, publishPatchNow]);
+  }, [projectId, nodes, edges, publishSnapshot]);
 
   // =================== Generar código ===================
   const handleGenerate = useCallback(async () => {
@@ -237,94 +261,24 @@ const Diagramador = forwardRef(function Diagramador(
 
   useImperativeHandle(ref, () => ({ persistNow, handleGenerate }));
 
-  // =================== Envío cursores: cada frame (rAF) ===================
-  const startRafSender = useCallback(() => {
-    if (rafSendIdRef.current) return;
-    const loop = () => {
-      const mv = lastMoveRef.current;
-      if (mv && sock) {
+  // =================== MOVIMIENTOS: throttle ===================
+  const sendMoveThrottled = useMemo(
+    () =>
+      throttle((id, x, y) => {
+        if (!sock) return;
         const seq = ++seqCounterRef.current;
-        try {
-          // Enviar SIN umbral y sin redondeo para máxima respuesta
-          sock.send(destCursor, {
-            t: "c", // compacto
-            clientId: clientIdRef.current,
-            id: mv.id,
-            x: mv.x,
-            y: mv.y,
-            ts: performance.now(), // ms alta resolución
-            seq,
-          });
-        } catch {}
-      }
-      rafSendIdRef.current = requestAnimationFrame(loop);
-    };
-    rafSendIdRef.current = requestAnimationFrame(loop);
-  }, [sock, destCursor]);
-
-  const stopRafSender = useCallback(() => {
-    if (rafSendIdRef.current) {
-      cancelAnimationFrame(rafSendIdRef.current);
-      rafSendIdRef.current = 0;
-    }
-  }, []);
-
-  // =================== Apply patch (merge por timestamp) ===================
-  const applyPatch = useCallback(
-    (msg) => {
-      if (!msg) return;
-      if (typeof msg.nodes !== "string" || typeof msg.edges !== "string") return;
-      const patchTs = Number(msg.serverTs) || 0;
-      try {
-        const n = JSON.parse(msg.nodes);
-        const e = JSON.parse(msg.edges);
-        if (!Array.isArray(n) || !Array.isArray(e)) return;
-
-        setNodes((prev) => {
-          const prevById = new Map(prev.map((p) => [p.id, p]));
-          return n.map((nn) => {
-            const lastMoveTs = posTsRef.current.get(String(nn.id)) || 0;
-            if (lastMoveTs > patchTs) {
-              const old = prevById.get(nn.id);
-              if (old?.position) return { ...nn, position: old.position };
-            }
-            return nn;
-          });
+        sock.send(destCursor, {
+          type: "diagram.move",
+          clientId: clientIdRef.current,
+          id,
+          x,
+          y,
+          ts: Date.now(),
+          seq,
         });
-        setEdges(e);
-        versionRef.current = msg.version ?? versionRef.current;
-      } catch {}
-    },
-    [setNodes, setEdges]
+      }, 60),
+    [sock, destCursor]
   );
-
-  // =================== Interpolación remota (rAF, más agresiva) ===================
-  const applyRemoteSmooth = useCallback(() => {
-    const ease = 0.7; // ⚡ más rápido (0..1)
-    let changed = false;
-
-    setNodes((ns) => {
-      const map = new Map(ns.map((n) => [n.id, n]));
-      peersRef.current.forEach((target, nodeId) => {
-        const n = map.get(String(nodeId));
-        if (!n || !n.position) return;
-        const nx = n.position.x + (target.tx - n.position.x) * ease;
-        const ny = n.position.y + (target.ty - n.position.y) * ease;
-        // Umbral muy bajo para ver todo movimiento
-        if (Math.abs(nx - n.position.x) > 0.02 || Math.abs(ny - n.position.y) > 0.02) {
-          map.set(String(nodeId), { ...n, position: { x: nx, y: ny } });
-          changed = true;
-        }
-      });
-      return changed ? Array.from(map.values()) : ns;
-    });
-
-    if (changed) {
-      rafApplyIdRef.current = requestAnimationFrame(applyRemoteSmooth);
-    } else {
-      rafApplyIdRef.current = 0;
-    }
-  }, [setNodes]);
 
   // =================== Suscripciones STOMP ===================
   useEffect(() => {
@@ -334,14 +288,22 @@ const Diagramador = forwardRef(function Diagramador(
     const subUpdates = sock.subscribe(topicUpdates, (msg) => {
       if (!msg) return;
       if (msg.clientId === clientIdRef.current) return;
-      if (isDraggingRef.current) {
-        queuedPatchRef.current = msg;
-        return;
+
+      // Acepta sólo si trae nodos/edges stringificadas
+      if (typeof msg.nodes === "string" && typeof msg.edges === "string") {
+        try {
+          const n = JSON.parse(msg.nodes);
+          const e = JSON.parse(msg.edges);
+          if (Array.isArray(n) && Array.isArray(e)) {
+            setNodes(n);
+            setEdges(e);
+            versionRef.current = msg.version ?? versionRef.current;
+          }
+        } catch {}
       }
-      applyPatch(msg);
     });
 
-    // Cursores remotos (alta frecuencia)
+    // Movimientos de otros clientes (aplicar posición exacta)
     const subCursors = sock.subscribe(topicCursors, (msg) => {
       const isMove = msg?.type === "diagram.move" || msg?.t === "c";
       if (!isMove) return;
@@ -352,69 +314,43 @@ const Diagramador = forwardRef(function Diagramador(
       const y = Number(msg.y);
       if (!id || Number.isNaN(x) || Number.isNaN(y)) return;
 
+      // descartar fuera de orden
       if (typeof msg.seq === "number") {
-        const prevSeq = lastSeqRef.current.get(id) ?? -1;
-        if (msg.seq <= prevSeq) return; // descarta viejo
+        const prev = lastSeqRef.current.get(id) ?? -1;
+        if (msg.seq <= prev) return;
         lastSeqRef.current.set(id, msg.seq);
       }
-      if (typeof msg.ts === "number") {
-        posTsRef.current.set(id, msg.ts);
-      }
 
-      const p = peersRef.current.get(id) || { tx: x, ty: y };
-      p.tx = x;
-      p.ty = y;
-      peersRef.current.set(id, p);
-
-      if (!rafApplyIdRef.current) {
-        rafApplyIdRef.current = requestAnimationFrame(applyRemoteSmooth);
-      }
+      setNodes((ns) => {
+        const map = new Map(ns.map((n) => [n.id, n]));
+        const n = map.get(id);
+        if (!n || !n.position) return ns;
+        const updated = { ...n, position: { x, y } };
+        map.set(id, updated);
+        return Array.from(map.values());
+      });
     });
 
-    // Resync on reconnect (snapshot crítico)
+    // Re-snapshot al reconectar
     const offConnect = sock.onConnect(() => {
       try {
-        sock.send(
-          destUpdate,
-          {
-            clientId: clientIdRef.current,
-            baseVersion: versionRef.current,
-            name: "Principal",
-            nodes: JSON.stringify(nodes),
-            edges: JSON.stringify(edges),
-          },
-          { critical: true }
-        );
+        sock.send(destUpdate, {
+          type: "diagram.snapshot",
+          clientId: clientIdRef.current,
+          baseVersion: versionRef.current,
+          name: "Principal",
+          nodes: JSON.stringify(nodes),
+          edges: JSON.stringify(edges),
+        });
       } catch {}
     });
 
     return () => {
-      try {
-        sock.unsubscribe(subUpdates);
-      } catch {}
-      try {
-        sock.unsubscribe(subCursors);
-      } catch {}
-      try {
-        offConnect?.();
-      } catch {}
-      try {
-        if (rafApplyIdRef.current) cancelAnimationFrame(rafApplyIdRef.current);
-        rafApplyIdRef.current = 0;
-      } catch {}
+      try { sock.unsubscribe(subUpdates); } catch {}
+      try { sock.unsubscribe(subCursors); } catch {}
+      try { offConnect?.(); } catch {}
     };
-  }, [
-    sock,
-    projectId,
-    topicUpdates,
-    topicCursors,
-    destUpdate,
-    nodes,
-    edges,
-    applyPatch,
-    applyRemoteSmooth,
-    setNodes,
-  ]);
+  }, [sock, projectId, topicUpdates, topicCursors, destUpdate, nodes, edges, setNodes, setEdges]);
 
   // =================== ENTIDADES ===================
   const addEntity = () => {
@@ -428,7 +364,7 @@ const Diagramador = forwardRef(function Diagramador(
       })
     );
     setSelectedId(id);
-    setTimeout(publishPatchNow, 0);
+    scheduleSnapshot();
   };
 
   const updateEntity = (id, updater) => {
@@ -437,28 +373,41 @@ const Diagramador = forwardRef(function Diagramador(
         n.id === id ? { ...n, data: { ...n.data, ...updater(n.data) } } : n
       )
     );
-    setTimeout(publishPatchNow, 0);
+    scheduleSnapshot();
   };
 
   const removeEntity = (id) => {
     setNodes((ns) => ns.filter((n) => n.id !== id));
     setEdges((es) => es.filter((e) => e.source !== id && e.target !== id));
-    setTimeout(publishPatchNow, 0);
+    scheduleSnapshot();
   };
 
   // =================== ReactFlow handlers ===================
   const onNodesChange = useCallback(
     (changes) => {
+      // Interceptar movimientos para emitir throttle
+      for (const ch of changes) {
+        if (ch.type === "position" && ch.dragging && ch.position) {
+          sendMoveThrottled(ch.id, ch.position.x, ch.position.y);
+        }
+      }
       rfOnNodesChange(changes);
+
+      // Si no es movimiento de drag, programa snapshot (add/remove/rename/etc.)
+      const onlyDragMoves = changes.every(
+        (c) => c.type === "position" && c.dragging
+      );
+      if (!onlyDragMoves) scheduleSnapshot();
     },
-    [rfOnNodesChange]
+    [rfOnNodesChange, sendMoveThrottled, scheduleSnapshot]
   );
 
   const onEdgesChange = useCallback(
     (changes) => {
       rfOnEdgesChange(changes);
+      scheduleSnapshot();
     },
-    [rfOnEdgesChange]
+    [rfOnEdgesChange, scheduleSnapshot]
   );
 
   const onConnect = useCallback(
@@ -466,30 +415,15 @@ const Diagramador = forwardRef(function Diagramador(
       setEdges((eds) =>
         addEdge({ ...params, animated: true, type: "uml", data: {} }, eds)
       );
-      setTimeout(publishPatchNow, 0);
+      scheduleSnapshot();
     },
-    [publishPatchNow]
+    [scheduleSnapshot]
   );
 
-  // Drag local
-  const onNodeDrag = useCallback(
-    (_, node) => {
-      isDraggingRef.current = true;
-      lastMoveRef.current = { id: node.id, x: node.position.x, y: node.position.y };
-      startRafSender(); // cada frame
-    },
-    [startRafSender]
-  );
-
-  const onNodeDragStop = useCallback(() => {
-    isDraggingRef.current = false;
-    stopRafSender();
-    publishPatchNow();
-    if (queuedPatchRef.current) {
-      applyPatch(queuedPatchRef.current);
-      queuedPatchRef.current = null;
-    }
-  }, [stopRafSender, publishPatchNow, applyPatch]);
+  const onNodeDragStop = useCallback((_, node) => {
+    // Al soltar: snapshot inmediato para converger
+    publishSnapshot();
+  }, [publishSnapshot]);
 
   // =================== IA (demo simple) ===================
   const handleIA = async (texto) => {
@@ -512,7 +446,7 @@ const Diagramador = forwardRef(function Diagramador(
         }
       });
       setNodes(nuevosNodos);
-      setTimeout(publishPatchNow, 0);
+      scheduleSnapshot();
       setIaOpen(false);
       return true;
     } catch (err) {
@@ -520,20 +454,6 @@ const Diagramador = forwardRef(function Diagramador(
       return false;
     }
   };
-
-  // =================== Limpieza rAF si el componente se desmonta ===================
-  useEffect(() => {
-    return () => {
-      try {
-        if (rafSendIdRef.current) cancelAnimationFrame(rafSendIdRef.current);
-        rafSendIdRef.current = 0;
-      } catch {}
-      try {
-        if (rafApplyIdRef.current) cancelAnimationFrame(rafApplyIdRef.current);
-        rafApplyIdRef.current = 0;
-      } catch {}
-    };
-  }, []);
 
   return (
     <div className="w-full h-[calc(100vh-56px)] md:grid md:grid-cols-[1fr_340px] overflow-hidden">
@@ -545,7 +465,6 @@ const Diagramador = forwardRef(function Diagramador(
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onNodeDrag={onNodeDrag}
           onNodeDragStop={onNodeDragStop}
           onNodeClick={(_, node) => setSelectedId(node.id)}
           nodeTypes={nodeTypes}
@@ -568,7 +487,7 @@ const Diagramador = forwardRef(function Diagramador(
           onClear={() => {
             setNodes([]);
             setEdges([]);
-            setTimeout(publishPatchNow, 0);
+            scheduleSnapshot();
           }}
           onOpenIA={() => setIaOpen(true)}
         >
@@ -615,7 +534,7 @@ const Diagramador = forwardRef(function Diagramador(
                     data: { mA, mB, verb, relType: tipo },
                   })
                 );
-                setTimeout(publishPatchNow, 0);
+                scheduleSnapshot();
               }}
               onRelacionNM={({ aId, bId, nombreIntermedia }) => {
                 const id = "e" + Date.now();
@@ -633,7 +552,7 @@ const Diagramador = forwardRef(function Diagramador(
                     },
                   })
                 );
-                setTimeout(publishPatchNow, 0);
+                scheduleSnapshot();
               }}
               onUpdateEdge={(edgeId, partial) => {
                 setEdges((es) =>
@@ -647,11 +566,11 @@ const Diagramador = forwardRef(function Diagramador(
                       : e
                   )
                 );
-                setTimeout(publishPatchNow, 0);
+                scheduleSnapshot();
               }}
               onDeleteEdge={(edgeId) => {
                 setEdges((es) => es.filter((e) => e.id !== edgeId));
-                setTimeout(publishPatchNow, 0);
+                scheduleSnapshot();
               }}
             />
           )}
