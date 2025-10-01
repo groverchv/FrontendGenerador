@@ -13,10 +13,7 @@ export default function Iaclase({ open, onClose, onSubmit }) {
 
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      setSupported(false);
-      return;
-    }
+    if (!SR) { setSupported(false); return; }
     setSupported(true);
 
     const rec = new SR();
@@ -27,16 +24,11 @@ export default function Iaclase({ open, onClose, onSubmit }) {
     rec.onresult = (e) => {
       let finalChunk = "";
       let interimChunk = "";
-
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const transcript = e.results[i][0].transcript;
-        if (e.results[i].isFinal) {
-          finalChunk += transcript;
-        } else {
-          interimChunk += transcript;
-        }
+        if (e.results[i].isFinal) finalChunk += transcript;
+        else interimChunk += transcript;
       }
-
       if (finalChunk) {
         const needsSpace = text && !text.endsWith(" ");
         setText((prev) => prev + (needsSpace ? " " : "") + finalChunk.trim());
@@ -44,25 +36,12 @@ export default function Iaclase({ open, onClose, onSubmit }) {
       setInterim(interimChunk);
     };
 
-    rec.onerror = (e) => {
-      setErrorMsg(e.error || "Error de reconocimiento de voz.");
-      setListening(false);
-    };
-
-    rec.onend = () => {
-      setListening(false);
-      setInterim("");
-    };
+    rec.onerror = (e) => { setErrorMsg(e.error || "Error de reconocimiento de voz."); setListening(false); };
+    rec.onend = () => { setListening(false); setInterim(""); };
 
     recognitionRef.current = rec;
-
     return () => {
-      try {
-        rec.onresult = null;
-        rec.onerror = null;
-        rec.onend = null;
-        rec.stop();
-      } catch {}
+      try { rec.onresult = null; rec.onerror = null; rec.onend = null; rec.stop(); } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -71,9 +50,7 @@ export default function Iaclase({ open, onClose, onSubmit }) {
 
   const stopListening = () => {
     const rec = recognitionRef.current;
-    if (rec) {
-      try { rec.stop(); } catch {}
-    }
+    if (rec) { try { rec.stop(); } catch {} }
     setListening(false);
     setInterim("");
   };
@@ -83,43 +60,26 @@ export default function Iaclase({ open, onClose, onSubmit }) {
     setErrorMsg("");
     const rec = recognitionRef.current;
     if (!rec) return;
-
     if (listening) {
       stopListening();
     } else {
-      try {
-        setListening(true);
-        rec.start();
-      } catch (err) {
-        setListening(false);
-        setErrorMsg("No se pudo iniciar el micrófono. " + (err?.message || ""));
-      }
+      try { setListening(true); rec.start(); }
+      catch (err) { setListening(false); setErrorMsg("No se pudo iniciar el micrófono. " + (err?.message || "")); }
     }
   };
 
   const handleSubmit = async () => {
     const payload = text.trim();
     if (!payload) return;
-
-    // Detenemos el dictado mientras enviamos
     if (listening) stopListening();
-
     setIsSubmitting(true);
     setErrorMsg("");
-
     try {
       const result = await Promise.resolve(onSubmit?.(payload));
-      // Regla: si devuelve false => fallo
-      if (result === false) {
-        setErrorMsg("No se pudo generar con IA.");
-        return; // NO limpiamos
-      }
-      // Éxito: limpiamos entrada
-      setText("");
-      setInterim("");
+      if (result === false) { setErrorMsg("No se pudo generar con IA."); return; }
+      setText(""); setInterim("");
     } catch (err) {
       setErrorMsg(err?.message || "Error al generar con IA.");
-      // NO limpiamos en error
     } finally {
       setIsSubmitting(false);
     }
@@ -130,13 +90,7 @@ export default function Iaclase({ open, onClose, onSubmit }) {
       <div className="bg-white w-[720px] max-w-[95vw] rounded-xl shadow-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold">Generar/Completar diagrama con IA</h3>
-          <button
-            onClick={onClose}
-            className="px-2 py-1 rounded-md border hover:bg-gray-50"
-            disabled={isSubmitting}
-          >
-            ✕
-          </button>
+          <button onClick={onClose} className="px-2 py-1 rounded-md border hover:bg-gray-50" disabled={isSubmitting}>✕</button>
         </div>
 
         <div className="flex items-center justify-between gap-2 mb-2">
@@ -147,7 +101,7 @@ export default function Iaclase({ open, onClose, onSubmit }) {
               className={`px-3 py-1.5 rounded-md border font-medium transition
                 ${listening ? "bg-red-50 border-red-300 text-red-700" : "hover:bg-gray-50"}
                 ${!supported || isSubmitting ? "opacity-60 cursor-not-allowed" : ""}`}
-              title={supported ? (listening ? "Detener dictado" : "Empezar dictado") : "Reconocimiento de voz no soportado"}
+              title={supported ? (listening ? "Detener dictado" : "Empezar dictado") : "Web Speech API no soportada"}
             >
               {listening ? "🎙️ Grabando..." : "🎤 Dictar"}
             </button>
@@ -177,10 +131,7 @@ export default function Iaclase({ open, onClose, onSubmit }) {
 - Agrega relación N–M entre Usuario y Rol con join Usuario_Rol
 - Añade atributo estado Boolean a Usuario`}
           value={text + (interim ? (text && !text.endsWith(" ") ? " " : "") + interim : "")}
-          onChange={(e) => {
-            setText(e.target.value);
-            setInterim("");
-          }}
+          onChange={(e) => { setText(e.target.value); setInterim(""); }}
           disabled={isSubmitting}
         />
 
@@ -191,11 +142,7 @@ export default function Iaclase({ open, onClose, onSubmit }) {
         )}
 
         <div className="mt-3 flex gap-2 justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-md border hover:bg-gray-50 disabled:opacity-60"
-            disabled={isSubmitting}
-          >
+          <button onClick={onClose} className="px-4 py-2 rounded-md border hover:bg-gray-50 disabled:opacity-60" disabled={isSubmitting}>
             Cancelar
           </button>
           <button

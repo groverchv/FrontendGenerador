@@ -45,17 +45,13 @@ export default function Sidebar({
       <div className="flex border-b border-gray-100">
         <button
           onClick={() => setActiveTab("entidad")}
-          className={`flex-1 px-4 py-2 ${
-            activeTab === "entidad" ? "border-b-2 border-sky-500" : ""
-          }`}
+          className={`flex-1 px-4 py-2 ${activeTab === "entidad" ? "border-b-2 border-sky-500" : ""}`}
         >
           Entidad
         </button>
         <button
           onClick={() => setActiveTab("relacionar")}
-          className={`flex-1 px-4 py-2 ${
-            activeTab === "relacionar" ? "border-b-2 border-sky-500" : ""
-          }`}
+          className={`flex-1 px-4 py-2 ${activeTab === "relacionar" ? "border-b-2 border-sky-500" : ""}`}
         >
           Relacionar
         </button>

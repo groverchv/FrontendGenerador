@@ -1,4 +1,3 @@
-// src/views/proyectos/Diagramador/Diagramador.jsx
 import {
   forwardRef,
   useCallback,
@@ -20,6 +19,7 @@ import ReactFlow, {
   BaseEdge,
   EdgeLabelRenderer,
   getBezierPath,
+  MarkerType,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
@@ -75,23 +75,50 @@ function UmlEdge(props) {
     sourcePosition,
     targetPosition,
     data,
-    markerEnd,
   } = props;
 
   const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-    targetPosition,
+    sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
   });
+
+  // --- Marcadores de flecha según dirección o herencia ---
+  let markerStart, markerEnd;
+  if (data?.relKind === "INHERIT") {
+    // Flecha cerrada hacia el padre (B)
+    markerEnd = { type: MarkerType.ArrowClosed };
+  } else {
+    const dir = data?.direction || "A->B";
+    if (dir === "A->B") markerEnd = { type: MarkerType.ArrowClosed };
+    else if (dir === "B->A") markerStart = { type: MarkerType.ArrowClosed };
+    else if (dir === "BIDI") {
+      markerStart = { type: MarkerType.ArrowClosed };
+      markerEnd = { type: MarkerType.ArrowClosed };
+    }
+  }
+
+  // Estereotipo textual
+  const stereotype =
+    data?.relKind === "COMP" ? "«comp»" :
+    data?.relKind === "AGGR" ? "«agreg»" :
+    data?.relKind === "INHERIT" ? "«extends»" : "";
+
+  // Rombos de composición/agregación simulados
+  const diamondFor = data?.relKind === "COMP" ? "◆" : (data?.relKind === "AGGR" ? "◇" : "");
+  const showDiamondA = !!diamondFor && (data?.owning || "A") === "A";
+  const showDiamondB = !!diamondFor && (data?.owning || "A") === "B";
+
+  // Posicionamientos auxiliares
+  const srcLabelX = sourceX * 0.9 + targetX * 0.1;
+  const srcLabelY = sourceY * 0.9 + targetY * 0.1;
+  const tgtLabelX = sourceX * 0.1 + targetX * 0.9;
+  const tgtLabelY = sourceY * 0.1 + targetY * 0.9;
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} />
+      <BaseEdge id={id} path={edgePath} markerStart={markerStart} markerEnd={markerEnd} />
+
       <EdgeLabelRenderer>
-        {data?.verb && (
+        {(data?.verb || stereotype) && (
           <div
             style={{
               position: "absolute",
@@ -102,9 +129,51 @@ function UmlEdge(props) {
               background: "rgba(255,255,255,0.6)",
               padding: "0 4px",
               borderRadius: 4,
+              whiteSpace: "nowrap",
             }}
           >
-            {data.verb}
+            {stereotype ? `${stereotype}${data?.verb ? " " : ""}` : ""}
+            {data?.verb || ""}
+          </div>
+        )}
+
+        {(data?.mA || data?.roleA || showDiamondA) && (
+          <div
+            style={{
+              position: "absolute",
+              transform: `translate(-50%, -50%) translate(${srcLabelX}px, ${srcLabelY}px)`,
+              pointerEvents: "none",
+              fontSize: 11,
+              color: "#111827",
+              background: "rgba(255,255,255,0.7)",
+              padding: "0 4px",
+              borderRadius: 4,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {showDiamondA ? `${diamondFor} ` : ""}
+            {data?.mA ? `[${data.mA}] ` : ""}
+            {data?.roleA ? `${data.roleA}` : ""}
+          </div>
+        )}
+
+        {(data?.mB || data?.roleB || showDiamondB) && (
+          <div
+            style={{
+              position: "absolute",
+              transform: `translate(-50%, -50%) translate(${tgtLabelX}px, ${tgtLabelY}px)`,
+              pointerEvents: "none",
+              fontSize: 11,
+              color: "#111827",
+              background: "rgba(255,255,255,0.7)",
+              padding: "0 4px",
+              borderRadius: 4,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {showDiamondB ? `${diamondFor} ` : ""}
+            {data?.mB ? `[${data.mB}] ` : ""}
+            {data?.roleB ? `${data.roleB}` : ""}
           </div>
         )}
       </EdgeLabelRenderer>
@@ -207,7 +276,7 @@ const Diagramador = forwardRef(function Diagramador(
     })();
   }, [projectId, setNodes, setEdges]);
 
-  // =================== Persistencia explícita (botón Guardar) ===================
+  // =================== Persistencia explícita ===================
   const persistNow = useCallback(async () => {
     try {
       if (!projectId) return;
@@ -242,6 +311,20 @@ const Diagramador = forwardRef(function Diagramador(
           mA: e.data?.mA,
           mB: e.data?.mB,
           relType: e.data?.relType,
+          meta: {
+            relKind: e.data?.relKind,
+            direction: e.data?.direction,
+            roleA: e.data?.roleA,
+            roleB: e.data?.roleB,
+            owning: e.data?.owning,
+            optionalA: e.data?.optionalA,
+            optionalB: e.data?.optionalB,
+            orphanRemoval: e.data?.orphanRemoval,
+            fetch: e.data?.fetch,
+            cascade: e.data?.cascade,
+            join: e.data?.join,
+            inheritStrategy: e.data?.inheritStrategy,
+          },
         })),
       };
 
@@ -289,7 +372,6 @@ const Diagramador = forwardRef(function Diagramador(
       if (!msg) return;
       if (msg.clientId === clientIdRef.current) return;
 
-      // Acepta sólo si trae nodos/edges stringificadas
       if (typeof msg.nodes === "string" && typeof msg.edges === "string") {
         try {
           const n = JSON.parse(msg.nodes);
@@ -303,7 +385,7 @@ const Diagramador = forwardRef(function Diagramador(
       }
     });
 
-    // Movimientos de otros clientes (aplicar posición exacta)
+    // Movimientos de otros clientes
     const subCursors = sock.subscribe(topicCursors, (msg) => {
       const isMove = msg?.type === "diagram.move" || msg?.t === "c";
       if (!isMove) return;
@@ -314,7 +396,6 @@ const Diagramador = forwardRef(function Diagramador(
       const y = Number(msg.y);
       if (!id || Number.isNaN(x) || Number.isNaN(y)) return;
 
-      // descartar fuera de orden
       if (typeof msg.seq === "number") {
         const prev = lastSeqRef.current.get(id) ?? -1;
         if (msg.seq <= prev) return;
@@ -385,7 +466,6 @@ const Diagramador = forwardRef(function Diagramador(
   // =================== ReactFlow handlers ===================
   const onNodesChange = useCallback(
     (changes) => {
-      // Interceptar movimientos para emitir throttle
       for (const ch of changes) {
         if (ch.type === "position" && ch.dragging && ch.position) {
           sendMoveThrottled(ch.id, ch.position.x, ch.position.y);
@@ -393,7 +473,6 @@ const Diagramador = forwardRef(function Diagramador(
       }
       rfOnNodesChange(changes);
 
-      // Si no es movimiento de drag, programa snapshot (add/remove/rename/etc.)
       const onlyDragMoves = changes.every(
         (c) => c.type === "position" && c.dragging
       );
@@ -421,7 +500,6 @@ const Diagramador = forwardRef(function Diagramador(
   );
 
   const onNodeDragStop = useCallback((_, node) => {
-    // Al soltar: snapshot inmediato para converger
     publishSnapshot();
   }, [publishSnapshot]);
 
@@ -522,7 +600,7 @@ const Diagramador = forwardRef(function Diagramador(
             <RelacionarPanel
               nodes={nodes}
               edges={edges}
-              onRelacionSimple={({ sourceId, targetId, tipo, mA, mB, verb }) => {
+              onRelacionSimple={({ sourceId, targetId, tipo, mA, mB, verb, meta }) => {
                 const id = "e" + Date.now();
                 setEdges((es) =>
                   es.concat({
@@ -531,12 +609,18 @@ const Diagramador = forwardRef(function Diagramador(
                     target: targetId,
                     type: "uml",
                     label: verb,
-                    data: { mA, mB, verb, relType: tipo },
+                    data: {
+                      mA,
+                      mB,
+                      verb,
+                      relType: tipo,
+                      ...meta,
+                    },
                   })
                 );
                 scheduleSnapshot();
               }}
-              onRelacionNM={({ aId, bId, nombreIntermedia }) => {
+              onRelacionNM={({ aId, bId, nombreIntermedia, meta }) => {
                 const id = "e" + Date.now();
                 setEdges((es) =>
                   es.concat({
@@ -549,6 +633,7 @@ const Diagramador = forwardRef(function Diagramador(
                       mB: "N",
                       relType: "NM",
                       verb: nombreIntermedia || "",
+                      ...meta,
                     },
                   })
                 );
