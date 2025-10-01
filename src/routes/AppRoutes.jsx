@@ -1,4 +1,3 @@
-// src/routes/AppRoutes.jsx
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import Proyecto from "../pages/components/Proyecto/Proyecto";
@@ -11,7 +10,6 @@ export default function AppRoutes() {
 
       <Route path="/proyectos" element={<Proyecto />} />
       <Route path="/proyectos/:id" element={<ProjectDetail />} />
-      {/* catch-all para URLs viejas */}
       <Route
         path="/proyecto/*"
         element={<Navigate to="/proyectos" replace />}
