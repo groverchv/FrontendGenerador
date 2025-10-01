@@ -39,7 +39,17 @@ function ClassNode({ data }) {
 }
 
 /* ---------- Relación UML reutilizada ---------- */
-function UmlEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd }) {
+function UmlEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  data,
+  markerEnd,
+}) {
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -73,11 +83,38 @@ function UmlEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targe
   );
 }
 
-/* ---------- Formateo de fecha y hora ---------- */
+/* ---------- Utilidades de localización (locale y zona horaria) ---------- */
+const USER_LOCALE =
+  (typeof navigator !== "undefined" && navigator.language) ? navigator.language : "es-BO";
+const USER_TIMEZONE =
+  (typeof Intl !== "undefined" &&
+    Intl.DateTimeFormat &&
+    Intl.DateTimeFormat().resolvedOptions().timeZone) || "America/La_Paz";
+
+/* Ajuste visual fijo en horas (negativo para restar). En Bolivia (UTC-4): -4 */
+const DISPLAY_OFFSET_HOURS =
+  (typeof import.meta !== "undefined" &&
+    import.meta.env &&
+    import.meta.env.VITE_DISPLAY_OFFSET_HOURS !== undefined)
+    ? Number(import.meta.env.VITE_DISPLAY_OFFSET_HOURS)
+    : -4;
+
+const MS_PER_HOUR = 3600000;
+function applyOffset(date, hours) {
+  return new Date(date.getTime() + hours * MS_PER_HOUR);
+}
+
+/* ---------- Formateo de fecha y hora (restando 4 horas) ---------- */
 function formatFecha(iso) {
+  if (!iso) return "—";
   try {
     const d = new Date(iso);
-    return d.toLocaleString(undefined, {
+    if (isNaN(d.getTime())) return String(iso);
+
+    // Restar horas para alinear con UTC-4 (o el valor configurado)
+    const adjusted = applyOffset(d, DISPLAY_OFFSET_HOURS);
+
+    return adjusted.toLocaleString(USER_LOCALE, {
       year: "numeric",
       month: "short",
       day: "2-digit",
@@ -85,9 +122,11 @@ function formatFecha(iso) {
       minute: "2-digit",
       second: "2-digit",
       hour12: false,
+      timeZone: USER_TIMEZONE, // fuerza la zona local detectada (fallback: America/La_Paz)
+      // timeZoneName: "short",
     });
   } catch {
-    return iso;
+    return String(iso);
   }
 }
 
