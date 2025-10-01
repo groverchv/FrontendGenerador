@@ -1,28 +1,65 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 
-/** Tipos “por lado” (UML multiplicities) */
-const SIDE_TYPES = ["1", "0..1", "N", "0..N"];
-const isMany = (t) => t === "N" || t === "0..N";
+/** Tipos UML del combo (como en la imagen) */
+const SIDE_TYPES = ["0..1", "1", "0..*", "1..*", "*"];
 
-/** Decide si es N–M o relación simple compatible */
+/** Helpers de multiplicidad */
+const MANY_SET = new Set(["0..*", "1..*", "*"]);
+const isMany = (t) => MANY_SET.has(t);
+
+const classify = (t) => {
+  if (t === "1") return "ONE";
+  if (t === "0..1") return "ZERO_ONE";
+  if (isMany(t)) return "MANY";
+  // Legacy por si llega algo viejo
+  if (t === "N") return "MANY";
+  if (t === "0..N") return "MANY";
+  return "ONE";
+};
+
+/** Normaliza valores legacy guardados en edges a las nuevas opciones */
+const normalizeLegacy = (v) => (v === "N" ? "*" : v === "0..N" ? "0..*" : v || "1");
+
+/** Decide si es N–M o relación simple compatible, y la clave tipo */
 function decideTipo(left, right) {
   if (!left || !right) return { error: "Selecciona ambos tipos." };
-  if (isMany(left) && isMany(right)) return { mode: "NM" };
 
-  const key =
-    (left === "1" && right === "1") ? "1-1" :
-    (left === "1" && right === "N") ? "1-N" :
-    (left === "N" && right === "1") ? "N-1" :
-    (left === "0..1" && right === "1") ? "0-1" :
-    (left === "1" && right === "0..1") ? "1-0" :
-    (left === "0..N" && right === "N") ? "0-N" :
-    (left === "N" && right === "0..N") ? "N-0" :
-    null;
+  const L = classify(left);
+  const R = classify(right);
+
+  if (L === "MANY" && R === "MANY") return { mode: "NM" };
+
+  // Mapeo a claves conocidas
+  let key = null;
+  if (L === "ONE" && R === "ONE") key = "1-1";
+  else if (L === "ONE" && R === "MANY") key = "1-N";
+  else if (L === "MANY" && R === "ONE") key = "N-1";
+  else if (L === "ZERO_ONE" && R === "ONE") key = "0-1";
+  else if (L === "ONE" && R === "ZERO_ONE") key = "1-0";
+  else if (L === "ZERO_ONE" && R === "MANY") key = "0-N";
+  else if (L === "MANY" && R === "ZERO_ONE") key = "N-0";
 
   if (!key) {
-    return { error: "Combinación no soportada. Para N–M elige N u 0..N en ambos lados." };
+    return {
+      error:
+        "Combinación no soportada. Para N–M usa 0..*, 1..* o * en ambos lados.",
+    };
   }
   return { mode: "SIMPLE", tipo: key };
+}
+
+/** Sugerencia de nombre de tabla intermedia: entidades en orden alfabético, snake_case */
+function suggestJoinName(aName, bName) {
+  const clean = (s) =>
+    (s || "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w\s]/g, "")
+      .trim()
+      .replace(/\s+/g, "_")
+      .toLowerCase();
+  const [x, y] = [clean(aName), clean(bName)].sort();
+  return `${x}_${y}`;
 }
 
 export default function RelacionarPanel({
@@ -33,15 +70,15 @@ export default function RelacionarPanel({
   // Crear relación N–M (con tabla intermedia): { aId, bId, nombreIntermedia }
   onRelacionNM,
   // Actualizar y borrar edges del historial
-  onUpdateEdge,       // (edgeId, partial)
-  onDeleteEdge,       // (edgeId)
-  onOpenIA            // ← NUEVO: abre modal IA con contexto de relaciones
+  onUpdateEdge,
+  onDeleteEdge,
+  onOpenIA,
 }) {
   const options = useMemo(
-    () => nodes.map(n => ({ id: n.id, name: n.data?.label || n.id })),
+    () => nodes.map((n) => ({ id: n.id, name: n.data?.label || n.id })),
     [nodes]
   );
-  const nameOf = (id) => options.find(o => o.id === id)?.name || id;
+  const nameOf = (id) => options.find((o) => o.id === id)?.name || id;
 
   // --- Form state ---
   const [a, setA] = useState("");
@@ -58,7 +95,19 @@ export default function RelacionarPanel({
   const decision = decideTipo(aTipo, bTipo);
   const isNM = decision.mode === "NM";
   const canCreate = !!a && !!b && !same && !decision.error;
-  const canUpdate = canCreate && !isNM; // en edición no permitimos convertir a N–M
+  const canUpdate = canCreate && !isNM; // en edición no se convierte a N–M
+
+  // Autocompletar nombre de tabla intermedia cuando detectamos N–M
+  useEffect(() => {
+    if (!editingId && isNM && a && b) {
+      const suggested = suggestJoinName(nameOf(a), nameOf(b));
+      if (!interName) setInterName(suggested);
+    }
+    if (!isNM && interName) {
+      setInterName("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [a, b, aTipo, bTipo, isNM, editingId]);
 
   const clearForm = () => {
     setA("");
@@ -73,7 +122,11 @@ export default function RelacionarPanel({
   const crear = () => {
     if (!canCreate) return;
     if (isNM) {
-      onRelacionNM?.({ aId: a, bId: b, nombreIntermedia: interName.trim() || undefined });
+      onRelacionNM?.({
+        aId: a,
+        bId: b,
+        nombreIntermedia: (interName || suggestJoinName(nameOf(a), nameOf(b))).trim(),
+      });
       clearForm();
     } else {
       onRelacionSimple?.({
@@ -93,7 +146,12 @@ export default function RelacionarPanel({
     onUpdateEdge?.(editingId, {
       source: a,
       target: b,
-      data: { mA: aTipo, mB: bTipo, verb: verb.trim(), relType: decision.tipo },
+      data: {
+        mA: aTipo,
+        mB: bTipo,
+        verb: verb.trim(),
+        relType: decision.tipo,
+      },
       label: verb.trim() || undefined,
     });
     clearForm();
@@ -102,9 +160,9 @@ export default function RelacionarPanel({
   const startEditFromEdge = (e) => {
     setEditingId(e.id);
     setA(e.source);
-    setATipo(e.data?.mA || "1");
+    setATipo(normalizeLegacy(e.data?.mA));
     setB(e.target);
-    setBTipo(e.data?.mB || "1");
+    setBTipo(normalizeLegacy(e.data?.mB));
     setVerb(e.data?.verb || "");
     setInterName(""); // no aplica en edición
   };
@@ -112,15 +170,15 @@ export default function RelacionarPanel({
   const openIAHere = () => {
     onOpenIA?.({
       scope: "relation",
-      candidates: options.map(o => o.name),
+      candidates: options.map((o) => o.name),
       draft: {
         aName: a ? nameOf(a) : "",
         bName: b ? nameOf(b) : "",
         mA: aTipo,
         mB: bTipo,
         verb: verb.trim(),
-        joinName: interName.trim() || ""
-      }
+        joinName: interName.trim() || "",
+      },
     });
   };
 
@@ -158,18 +216,30 @@ export default function RelacionarPanel({
           </div>
           <select className="border rounded-md px-2 py-1" value={a} onChange={(e) => setA(e.target.value)}>
             <option value="">Seleccionar</option>
-            {options.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
           </select>
         </div>
 
         {/* Tipo A */}
         <div className="grid grid-cols-[1fr_auto] gap-2 items-center mb-2">
           <div>
-            <div className="text-xs text-gray-600">Tipo de relación (A)</div>
+            <div className="text-xs text-gray-600">Multiplicidad (A)</div>
             <div className="font-semibold min-h-[20px]">{aTipo}</div>
           </div>
-          <select className="border rounded-md px-2 py-1" value={aTipo} onChange={(e) => setATipo(e.target.value)}>
-            {SIDE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          <select
+            className="border rounded-md px-2 py-1"
+            value={aTipo}
+            onChange={(e) => setATipo(e.target.value)}
+          >
+            {SIDE_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -181,18 +251,30 @@ export default function RelacionarPanel({
           </div>
           <select className="border rounded-md px-2 py-1" value={b} onChange={(e) => setB(e.target.value)}>
             <option value="">Seleccionar</option>
-            {options.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
           </select>
         </div>
 
         {/* Tipo B */}
         <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
           <div>
-            <div className="text-xs text-gray-600">Tipo de relación (B)</div>
+            <div className="text-xs text-gray-600">Multiplicidad (B)</div>
             <div className="font-semibold min-h-[20px]">{bTipo}</div>
           </div>
-          <select className="border rounded-md px-2 py-1" value={bTipo} onChange={(e) => setBTipo(e.target.value)}>
-            {SIDE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          <select
+            className="border rounded-md px-2 py-1"
+            value={bTipo}
+            onChange={(e) => setBTipo(e.target.value)}
+          >
+            {SIDE_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -210,13 +292,16 @@ export default function RelacionarPanel({
         {/* Campo intermedio solo si N–M y NO en edición */}
         {!editingId && isNM && (
           <div className="mt-2">
-            <label className="text-xs text-gray-600">Nombre de tabla intermedia (opcional)</label>
+            <label className="text-xs text-gray-600">Nombre de tabla intermedia</label>
             <input
               className="w-full border rounded-md px-2 py-1 mt-1"
               value={interName}
               onChange={(e) => setInterName(e.target.value)}
-              placeholder="Ej: Usuario_Rol"
+              placeholder="Ej: usuario_rol"
             />
+            <div className="text-[11px] text-gray-500 mt-1">
+              Sugerido automáticamente; edítalo si quieres.
+            </div>
           </div>
         )}
 
@@ -267,16 +352,19 @@ export default function RelacionarPanel({
         {edges?.length ? (
           <ul className="list-none p-0 m-0">
             {edges.map((e) => (
-              <li key={e.id} className="py-2 border-b border-dashed border-gray-200 last:border-b-0">
+              <li
+                key={e.id}
+                className="py-2 border-b border-dashed border-gray-200 last:border-b-0"
+              >
                 {/* Encabezado: muestra multiplicidades estilo UML */}
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="font-semibold">
-                      {nameOf(e.source)}{" "}
-                      <span className="text-gray-700">{e.data?.mA || ""}</span>
+                      {options.find(o => o.id === e.source)?.name || e.source}{" "}
+                      <span className="text-gray-700">{normalizeLegacy(e.data?.mA)}</span>
                       {" "}→{" "}
-                      <span className="text-gray-700">{e.data?.mB || ""}</span>{" "}
-                      {nameOf(e.target)}
+                      <span className="text-gray-700">{normalizeLegacy(e.data?.mB)}</span>{" "}
+                      {options.find(o => o.id === e.target)?.name || e.target}
                     </div>
                     <div className="text-xs text-gray-600">
                       Verbo: <code>{e.data?.verb || "(sin verbo)"}</code>
@@ -286,18 +374,22 @@ export default function RelacionarPanel({
                   {/* IA contextual por relación */}
                   {onOpenIA && (
                     <button
-                      onClick={() => onOpenIA({
-                        scope: "relation-edit",
-                        edgeId: e.id,
-                        current: {
-                          aName: nameOf(e.source),
-                          bName: nameOf(e.target),
-                          mA: e.data?.mA || "1",
-                          mB: e.data?.mB || "1",
-                          verb: e.data?.verb || "",
-                          relType: e.data?.relType || ""
-                        }
-                      })}
+                      onClick={() =>
+                        onOpenIA({
+                          scope: "relation-edit",
+                          edgeId: e.id,
+                          current: {
+                            aName:
+                              options.find(o => o.id === e.source)?.name || e.source,
+                            bName:
+                              options.find(o => o.id === e.target)?.name || e.target,
+                            mA: normalizeLegacy(e.data?.mA || "1"),
+                            mB: normalizeLegacy(e.data?.mB || "1"),
+                            verb: e.data?.verb || "",
+                            relType: e.data?.relType || "",
+                          },
+                        })
+                      }
                       className="px-2 py-1 rounded-md border bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-sm"
                       title="Sugerencias IA para esta relación"
                     >
@@ -323,7 +415,7 @@ export default function RelacionarPanel({
                   />
                 </div>
 
-                {/* Acciones abajo: Editar + basurero */}
+                {/* Acciones */}
                 <div className="mt-2 flex justify-end gap-2">
                   <button
                     className="px-3 py-1 rounded-md border text-sm hover:bg-gray-50"

@@ -26,7 +26,6 @@ import "reactflow/dist/style.css";
 import Sidebar from "./sidebar/sidebar";
 import EntidadPanel from "./components/entidad";
 import RelacionarPanel from "./components/relacionar";
-import Iaclase from "./components/iaclase";
 
 import { buildPrompt } from "./generador/promt";
 import { makeSkeleton } from "./generador/skeleton";
@@ -64,6 +63,24 @@ function debounce(fn, wait = 250) {
   };
 }
 
+/* ====== Helpers N–N / nombres / posiciones ====== */
+const toSnake = (s = "") =>
+  (s || "")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/g, "")
+    .trim().replace(/\s+/g, "_")
+    .toLowerCase();
+
+const inferIdType = (node) => {
+  const idAttr = (node?.data?.attrs || []).find(a => a.name?.toLowerCase() === "id");
+  return idAttr?.type || "Integer";
+};
+
+const midpoint = (a, b) => ({
+  x: ((a?.position?.x ?? 100) + (b?.position?.x ?? 100)) / 2,
+  y: ((a?.position?.y ?? 100) + (b?.position?.y ?? 100)) / 2,
+});
+
 /* ================= EDGE UML ================= */
 function UmlEdge(props) {
   const {
@@ -81,10 +98,8 @@ function UmlEdge(props) {
     sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
   });
 
-  // --- Marcadores de flecha según dirección o herencia ---
   let markerStart, markerEnd;
   if (data?.relKind === "INHERIT") {
-    // Flecha cerrada hacia el padre (B)
     markerEnd = { type: MarkerType.ArrowClosed };
   } else {
     const dir = data?.direction || "A->B";
@@ -96,18 +111,15 @@ function UmlEdge(props) {
     }
   }
 
-  // Estereotipo textual
   const stereotype =
     data?.relKind === "COMP" ? "«comp»" :
     data?.relKind === "AGGR" ? "«agreg»" :
     data?.relKind === "INHERIT" ? "«extends»" : "";
 
-  // Rombos de composición/agregación simulados
   const diamondFor = data?.relKind === "COMP" ? "◆" : (data?.relKind === "AGGR" ? "◇" : "");
   const showDiamondA = !!diamondFor && (data?.owning || "A") === "A";
   const showDiamondB = !!diamondFor && (data?.owning || "A") === "B";
 
-  // Posicionamientos auxiliares
   const srcLabelX = sourceX * 0.9 + targetX * 0.1;
   const srcLabelY = sourceY * 0.9 + targetY * 0.1;
   const tgtLabelX = sourceX * 0.1 + targetX * 0.9;
@@ -173,7 +185,7 @@ function UmlEdge(props) {
           >
             {showDiamondB ? `${diamondFor} ` : ""}
             {data?.mB ? `[${data.mB}] ` : ""}
-            {data?.roleB ? `${data.roleB}` : ""}
+            {data?.roleB ? `${data?.roleB}` : ""}
           </div>
         )}
       </EdgeLabelRenderer>
@@ -238,8 +250,8 @@ const Diagramador = forwardRef(function Diagramador(
   const destUpdate = useMemo(() => `/app/projects/${projectId}/update`, [projectId]);
   const destCursor = useMemo(() => `/app/projects/${projectId}/cursor`, [projectId]);
 
-  // ---- Seq para movimientos (evitar fuera de orden)
-  const lastSeqRef = useRef(new Map()); // nodeId -> last seq recibido
+  // ---- Seq para movimientos
+  const lastSeqRef = useRef(new Map());
   const seqCounterRef = useRef(0);
 
   // ---- Debounce de snapshots
@@ -261,7 +273,7 @@ const Diagramador = forwardRef(function Diagramador(
     [publishSnapshot]
   );
 
-  // =================== Carga inicial ===================
+  /* =================== Carga inicial =================== */
   useEffect(() => {
     if (!projectId) return;
     (async () => {
@@ -276,7 +288,7 @@ const Diagramador = forwardRef(function Diagramador(
     })();
   }, [projectId, setNodes, setEdges]);
 
-  // =================== Persistencia explícita ===================
+  /* =================== Persistencia explícita =================== */
   const persistNow = useCallback(async () => {
     try {
       if (!projectId) return;
@@ -294,7 +306,7 @@ const Diagramador = forwardRef(function Diagramador(
     }
   }, [projectId, nodes, edges, publishSnapshot]);
 
-  // =================== Generar código ===================
+  /* =================== Generar código =================== */
   const handleGenerate = useCallback(async () => {
     try {
       const model = {
@@ -344,7 +356,7 @@ const Diagramador = forwardRef(function Diagramador(
 
   useImperativeHandle(ref, () => ({ persistNow, handleGenerate }));
 
-  // =================== MOVIMIENTOS: throttle ===================
+  /* =================== MOVIMIENTOS: throttle =================== */
   const sendMoveThrottled = useMemo(
     () =>
       throttle((id, x, y) => {
@@ -363,11 +375,10 @@ const Diagramador = forwardRef(function Diagramador(
     [sock, destCursor]
   );
 
-  // =================== Suscripciones STOMP ===================
+  /* =================== Suscripciones STOMP =================== */
   useEffect(() => {
     if (!sock || !projectId) return;
 
-    // Snapshots (autoridad servidor)
     const subUpdates = sock.subscribe(topicUpdates, (msg) => {
       if (!msg) return;
       if (msg.clientId === clientIdRef.current) return;
@@ -385,7 +396,6 @@ const Diagramador = forwardRef(function Diagramador(
       }
     });
 
-    // Movimientos de otros clientes
     const subCursors = sock.subscribe(topicCursors, (msg) => {
       const isMove = msg?.type === "diagram.move" || msg?.t === "c";
       if (!isMove) return;
@@ -412,7 +422,6 @@ const Diagramador = forwardRef(function Diagramador(
       });
     });
 
-    // Re-snapshot al reconectar
     const offConnect = sock.onConnect(() => {
       try {
         sock.send(destUpdate, {
@@ -433,7 +442,7 @@ const Diagramador = forwardRef(function Diagramador(
     };
   }, [sock, projectId, topicUpdates, topicCursors, destUpdate, nodes, edges, setNodes, setEdges]);
 
-  // =================== ENTIDADES ===================
+  /* =================== ENTIDADES =================== */
   const addEntity = () => {
     const id = String(Date.now());
     setNodes((ns) =>
@@ -463,7 +472,7 @@ const Diagramador = forwardRef(function Diagramador(
     scheduleSnapshot();
   };
 
-  // =================== ReactFlow handlers ===================
+  /* =================== ReactFlow handlers =================== */
   const onNodesChange = useCallback(
     (changes) => {
       for (const ch of changes) {
@@ -499,40 +508,11 @@ const Diagramador = forwardRef(function Diagramador(
     [scheduleSnapshot]
   );
 
-  const onNodeDragStop = useCallback((_, node) => {
+  const onNodeDragStop = useCallback(() => {
     publishSnapshot();
   }, [publishSnapshot]);
 
-  // =================== IA (demo simple) ===================
-  const handleIA = async (texto) => {
-    try {
-      const instrucciones = texto.split("\n");
-      let nuevosNodos = [...nodes];
-      instrucciones.forEach((line) => {
-        if (line.toLowerCase().includes("entidad")) {
-          const nombre =
-            line.match(/entidad\s+(\w+)/i)?.[1] || `Entidad${Date.now()}`;
-          nuevosNodos.push({
-            id: String(Date.now() + Math.random()),
-            type: "classNode",
-            position: {
-              x: 100 + nuevosNodos.length * 40,
-              y: 100 + nuevosNodos.length * 30,
-            },
-            data: { label: nombre, attrs: [] },
-          });
-        }
-      });
-      setNodes(nuevosNodos);
-      scheduleSnapshot();
-      setIaOpen(false);
-      return true;
-    } catch (err) {
-      console.error("Error interpretando IA", err);
-      return false;
-    }
-  };
-
+  /* =================== UI =================== */
   return (
     <div className="w-full h-[calc(100vh-56px)] md:grid md:grid-cols-[1fr_340px] overflow-hidden">
       {/* Lienzo */}
@@ -567,7 +547,8 @@ const Diagramador = forwardRef(function Diagramador(
             setEdges([]);
             scheduleSnapshot();
           }}
-          onOpenIA={() => setIaOpen(true)}
+          onExport={persistNow}
+          onGenerate={handleGenerate}
         >
           {activeTab === "entidad" ? (
             <EntidadPanel
@@ -600,6 +581,7 @@ const Diagramador = forwardRef(function Diagramador(
             <RelacionarPanel
               nodes={nodes}
               edges={edges}
+              /* --- Relación simple --- */
               onRelacionSimple={({ sourceId, targetId, tipo, mA, mB, verb, meta }) => {
                 const id = "e" + Date.now();
                 setEdges((es) =>
@@ -609,45 +591,74 @@ const Diagramador = forwardRef(function Diagramador(
                     target: targetId,
                     type: "uml",
                     label: verb,
-                    data: {
-                      mA,
-                      mB,
-                      verb,
-                      relType: tipo,
-                      ...meta,
-                    },
+                    data: { mA, mB, verb, relType: tipo, ...meta },
                   })
                 );
                 scheduleSnapshot();
               }}
+              /* --- Relación N–N: crea entidad intermedia y 2 edges 1..* → 1 --- */
               onRelacionNM={({ aId, bId, nombreIntermedia, meta }) => {
-                const id = "e" + Date.now();
-                setEdges((es) =>
-                  es.concat({
-                    id,
-                    source: aId,
-                    target: bId,
-                    type: "uml",
+                const A = nodes.find(n => n.id === aId);
+                const B = nodes.find(n => n.id === bId);
+                if (!A || !B) { alert("No encuentro las entidades seleccionadas."); return; }
+
+                const joinName = (nombreIntermedia?.trim())
+                  || `${toSnake(A.data?.label || A.id)}_${toSnake(B.data?.label || B.id)}`;
+
+                // ¿Ya existe una entidad con ese nombre?
+                const existent = nodes.find(n => (n.data?.label || "").toLowerCase() === joinName.toLowerCase());
+                const joinId = existent?.id || ("n" + Date.now());
+
+                if (!existent) {
+                  const pos = midpoint(A, B);
+                  const tA = inferIdType(A);
+                  const tB = inferIdType(B);
+
+                  setNodes(ns => ns.concat({
+                    id: joinId,
+                    type: "classNode",
+                    position: { x: pos.x, y: pos.y },
                     data: {
-                      mA: "N",
-                      mB: "N",
-                      relType: "NM",
-                      verb: nombreIntermedia || "",
-                      ...meta,
+                      label: joinName,
+                      attrs: [
+                        { name: `${toSnake(A.data?.label || A.id)}_id`, type: tA },
+                        { name: `${toSnake(B.data?.label || B.id)}_id`, type: tB },
+                      ],
                     },
-                  })
+                  }));
+                }
+
+                // Quitar cualquier edge directo A<->B previo
+                setEdges(es =>
+                  es.filter(e =>
+                    !((e.source === aId && e.target === bId) || (e.source === bId && e.target === aId))
+                  )
                 );
+
+                // Añadir A -> join y B -> join
+                const e1 = {
+                  id: "e" + Date.now() + "-a",
+                  source: aId,
+                  target: joinId,
+                  type: "uml",
+                  data: { mA: "1..*", mB: "1", relType: "1-N", ...meta },
+                };
+                const e2 = {
+                  id: "e" + Date.now() + "-b",
+                  source: bId,
+                  target: joinId,
+                  type: "uml",
+                  data: { mA: "1..*", mB: "1", relType: "1-N", ...meta },
+                };
+
+                setEdges(es => es.concat(e1, e2));
                 scheduleSnapshot();
               }}
               onUpdateEdge={(edgeId, partial) => {
                 setEdges((es) =>
                   es.map((e) =>
                     e.id === edgeId
-                      ? {
-                          ...e,
-                          ...partial,
-                          data: { ...e.data, ...partial.data },
-                        }
+                      ? { ...e, ...partial, data: { ...e.data, ...partial.data } }
                       : e
                   )
                 );
@@ -661,9 +672,6 @@ const Diagramador = forwardRef(function Diagramador(
           )}
         </Sidebar>
       </div>
-
-      {/* Modal IA */}
-      <Iaclase open={iaOpen} onClose={() => setIaOpen(false)} onSubmit={handleIA} />
     </div>
   );
 });
