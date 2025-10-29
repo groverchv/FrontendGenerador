@@ -2,10 +2,22 @@ import React, { useMemo, useState, useEffect } from "react";
 
 // Tipos frecuentes en Spring Boot / JPA
 const TYPE_OPTIONS = [
-  "String", "Boolean",
-  "Byte", "Short", "Integer", "Long", "Float", "Double", "BigDecimal",
-  "LocalDate", "LocalDateTime", "Instant", "OffsetDateTime",
-  "UUID", "byte[]", "Text"
+  "String",
+  "Boolean",
+  "Byte",
+  "Short",
+  "Integer",
+  "Long",
+  "Float",
+  "Double",
+  "BigDecimal",
+  "LocalDate",
+  "LocalDateTime",
+  "Instant",
+  "OffsetDateTime",
+  "UUID",
+  "byte[]",
+  "Text",
 ];
 
 export default function EntidadPanel({
@@ -15,18 +27,25 @@ export default function EntidadPanel({
   onUpdateAttr,
   onRemoveAttr,
   onDelete,
-  onOpenIA // ← NUEVO: abre el modal IA (opcional)
+  onOpenIA,
+  onNamePreview, // ← NUEVO: envía el nombre "en vivo" para la previsualización
 }) {
   const [name, setName] = useState("");
   const [attrName, setAttrName] = useState("");
   const [attrType, setAttrType] = useState("String");
 
-  useEffect(() => { setName(node?.data?.label || ""); }, [node]);
+  useEffect(() => {
+    setName(node?.data?.label || "");
+  }, [node]);
 
   const attrs = useMemo(() => node?.data?.attrs || [], [node]);
 
   if (!node) {
-    return <div style={{ color: "#667085" }}>Selecciona una entidad en el lienzo para editarla.</div>;
+    return (
+      <div style={{ color: "#667085" }}>
+        Selecciona una entidad en el lienzo para editarla.
+      </div>
+    );
   }
 
   const canAdd = attrName.trim().length > 0;
@@ -37,19 +56,36 @@ export default function EntidadPanel({
     setAttrName("");
   };
 
+  // Debounce muy liviano para no spamear el padre
+  // (si quieres, reemplaza por un hook de debounce real)
+  let typingTimer = null;
+  const notifyPreview = (value) => {
+    if (!onNamePreview) return;
+    if (typingTimer) clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => onNamePreview(node.id, value), 120);
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Título + botón IA contextual */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
         <h3 style={{ marginTop: 0, marginBottom: 0 }}>Entidad</h3>
         {onOpenIA && (
           <button
             type="button"
-            onClick={() => onOpenIA({
-              scope: "entity",
-              entityName: node?.data?.label || "",
-              currentAttrs: attrs
-            })}
+            onClick={() =>
+              onOpenIA({
+                scope: "entity",
+                entityName: node?.data?.label || "",
+                currentAttrs: attrs,
+              })
+            }
             title="Sugerir/Completar atributos con IA"
             style={{
               padding: "4px 10px",
@@ -57,7 +93,7 @@ export default function EntidadPanel({
               border: "1px solid #c7d2fe",
               background: "#eef2ff",
               color: "#3730a3",
-              fontWeight: 600
+              fontWeight: 600,
             }}
           >
             IA
@@ -68,7 +104,11 @@ export default function EntidadPanel({
       <label style={{ fontSize: 12 }}>Nombre</label>
       <input
         value={name}
-        onChange={(e) => setName(e.target.value)}
+        onChange={(e) => {
+          const v = e.target.value;
+          setName(v);
+          notifyPreview(v); // ← manda el nombre en vivo para la previsualización
+        }}
         onBlur={() => onChangeName?.(name.trim() || node?.data?.label || "")}
         placeholder="Ej: Usuario"
       />
@@ -91,20 +131,35 @@ export default function EntidadPanel({
               >
                 <input
                   value={a.name}
-                  onChange={(e) => onUpdateAttr?.(i, { ...a, name: e.target.value })}
+                  onChange={(e) =>
+                    onUpdateAttr?.(i, { ...a, name: e.target.value })
+                  }
                   style={{ width: 140 }}
                 />
                 <select
                   value={a.type}
-                  onChange={(e) => onUpdateAttr?.(i, { ...a, type: e.target.value })}
+                  onChange={(e) =>
+                    onUpdateAttr?.(i, { ...a, type: e.target.value })
+                  }
                 >
-                  {TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                  {TYPE_OPTIONS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
                 </select>
-                <button onClick={() => onRemoveAttr?.(i)} title="Eliminar atributo">🗑️</button>
+                <button
+                  onClick={() => onRemoveAttr?.(i)}
+                  title="Eliminar atributo"
+                >
+                  🗑️
+                </button>
               </li>
             ))}
           </ul>
-        ) : <div style={{ color: "#888" }}>Sin atributos</div>}
+        ) : (
+          <div style={{ color: "#888" }}>Sin atributos</div>
+        )}
       </div>
 
       {/* fila de inputs */}
@@ -112,16 +167,21 @@ export default function EntidadPanel({
         <input
           value={attrName}
           onChange={(e) => setAttrName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") addAttr(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") addAttr();
+          }}
           placeholder="nombre atributo"
           style={{ flex: 1 }}
         />
         <select value={attrType} onChange={(e) => setAttrType(e.target.value)}>
-          {TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+          {TYPE_OPTIONS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
         </select>
       </div>
 
-      {/* botón abajo, azul y notorio */}
       <button
         disabled={!canAdd}
         onClick={addAttr}
@@ -141,7 +201,13 @@ export default function EntidadPanel({
       </button>
 
       <button
-        style={{ marginTop: 12, background: "#fee2e2", border: "1px solid #fecaca", borderRadius: 6, padding: "8px 10px" }}
+        style={{
+          marginTop: 12,
+          background: "#fee2e2",
+          border: "1px solid #fecaca",
+          borderRadius: 6,
+          padding: "8px 10px",
+        }}
         onClick={onDelete}
       >
         Eliminar entidad
