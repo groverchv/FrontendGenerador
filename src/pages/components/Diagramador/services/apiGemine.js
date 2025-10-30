@@ -2,7 +2,7 @@
 // Única API para Gemini: generación de código y delta del diagrama.
 
 // ===== Config =====
-const EMBEDDED_FALLBACK_KEY = "AIzaSyA2GflIktQZgODfQT5w-ZNGGMxIg60VsTU"; // último recurso
+const EMBEDDED_FALLBACK_KEY = "AIzaSyCC3nVzJYNF4XWhIedBPfwKNCAT134FTzw"; // último recurso
 let RUNTIME_API_KEY = "";   // settable en runtime con setGeminiApiKey()
 let RUNTIME_MODEL  = "";    // settable en runtime con setGeminiModel()
 
