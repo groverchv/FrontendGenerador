@@ -133,11 +133,30 @@ export default function Iaclase({ open, onClose, onSubmit }) {
 
         <textarea
           className="w-full h-52 border rounded-md p-2"
-          placeholder={`Ejemplos:
-- Crea Usuario(id Integer, nombre String, telefono Integer) y Entidad2(id Integer, nombre String, numero Integer)
-- Relación Usuario 1–N Entidad2 (verbo: tiene)
-- Agrega relación N–M entre Usuario y Rol con join Usuario_Rol
-- Añade atributo estado Boolean a Usuario`}
+          placeholder={`🎯 CAPACIDADES COMPLETAS:
+
+CRUD SIMPLE:
+• Crear entidad Usuario(id Integer, nombre String, email String)
+• Agregar atributo telefono String a Usuario
+• Eliminar atributo email de Usuario
+• Renombrar atributo telefono a celular
+• Eliminar entidad Cliente
+
+RELACIONES (5 tipos):
+• Relación Usuario 1 - * Pedido (verbo: realiza)
+• N-M Usuario y Rol join Usuario_Rol
+• Herencia Empleado -> Persona
+• Dependencia Servicio -> Repositorio
+• Composición Pedido 1 - * DetallePedido [lado A]
+• Eliminar relación entre Usuario y Rol
+
+SISTEMAS COMPLETOS:
+• Crear sistema de ventas
+• Crear sistema de ecommerce
+• Crear sistema de biblioteca
+• Crear sistema de hospital
+• Crear sistema de escuela
+• Crear sistema de restaurante`}
           value={text + (interim ? (text && !text.endsWith(" ") ? " " : "") + interim : "")}
           onChange={(e) => { setText(e.target.value); setInterim(""); }}
           disabled={isSubmitting}
@@ -163,8 +182,9 @@ export default function Iaclase({ open, onClose, onSubmit }) {
         </div>
 
         <div className="mt-2 text-xs text-gray-500">
-          Sugerencia: habla en frases como “Crear entidad Producto con id Integer, nombre String…”.
-          Si ves “Grabando…”, el dictado está activo. Pausa con el mismo botón.
+          <strong>💡 Tip de dictado:</strong> Habla claramente, por ejemplo: "Crear entidad Producto con id Integer, nombre String y precio BigDecimal".
+          <br />
+          <strong>📌 Importante:</strong> El generador crea solo lo que pides. Para un sistema completo, di "crear sistema de ventas". Para una entidad simple, di "crear entidad Usuario".
         </div>
       </div>
     </div>
