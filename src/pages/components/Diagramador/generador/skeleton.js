@@ -1,20 +1,18 @@
-// generador/skeleton.js
+// src/pages/components/Diagramador/generador/skeleton.js
+// (ajusta la ruta si tu árbol es diferente)
+
 const toArtifact = (s) =>
-  (s || "app")
-    .trim()
-    .toLowerCase()
-    .replace(/[^\w.-]+/g, "-"); // espacios -> '-', solo [a-z0-9._-]
+  (s || "app").trim().toLowerCase().replace(/[^\w.-]+/g, "-");
 
 const toPascal = (s) =>
   (s || "App")
     .replace(/[^a-zA-Z0-9]+/g, " ")
     .trim()
     .split(/\s+/)
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join("");
 
 const groupIdFromPackage = (pkg) => {
-  // usa los 2 primeros segmentos como groupId; si hay 1, usa ese
   const parts = (pkg || "com.example").split(".");
   if (parts.length >= 2) return `${parts[0]}.${parts[1]}`;
   return pkg || "com.example";
@@ -22,6 +20,7 @@ const groupIdFromPackage = (pkg) => {
 
 const pkgToPath = (pkg) => (pkg || "com.example").replace(/\./g, "/");
 
+/** 🔹 Export NOMBRE + DEFAULT */
 export function makeSkeleton(projectName, packageBase) {
   const artifactId = toArtifact(projectName);
   const appClass = `${toPascal(projectName)}Application`;
@@ -181,7 +180,7 @@ public class ${appClass} {
   const props = `spring.application.name=${projectName}
 
 # Configuración MySQL (edítala a tu entorno)
-spring.datasource.url=jdbc:mysql://localhost:3306/${toArtifact(projectName)}
+spring.datasource.url=jdbc:mysql://localhost:3306/${artifactId}
 spring.datasource.username=root
 spring.datasource.password= tu password
 spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
@@ -190,9 +189,37 @@ spring.jpa.hibernate.ddl-auto=update
 spring.jpa.show-sql=true
 `;
 
+  const corsConfig = `package ${packageBase}.Config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+@Configuration
+public class CorsConfig implements WebMvcConfigurer {
+  @Override
+  public void addCorsMappings(CorsRegistry registry) {
+    registry.addMapping("/api/**")
+      .allowedOrigins("*")
+      .allowedMethods("GET","POST","PUT","DELETE","PATCH","OPTIONS")
+      .allowedHeaders("*")
+      .exposedHeaders("Location")
+      .allowCredentials(false)
+      .maxAge(3600);
+  }
+}
+`;
+
   return {
     "pom.xml": pom,
     [`src/main/java/${pkgPath}/${appClass}.java`]: application,
     "src/main/resources/application.properties": props,
+    [`src/main/java/${pkgPath}/Config/CorsConfig.java`]: corsConfig,
   };
 }
+
+/** Exponemos también helpers por si los usas en otros lados */
+export const _skeletonHelpers = { toArtifact, toPascal, groupIdFromPackage, pkgToPath };
+
+/** default export por compatibilidad con imports por default */
+export default makeSkeleton;

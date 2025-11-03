@@ -1,38 +1,16 @@
-// src/views/proyectos/Diagramador/SubDiagrama/AristaUML.jsx
 import React from "react";
-import {
-  BaseEdge,
-  EdgeLabelRenderer,
-  getBezierPath,
-  MarkerType,
-} from "reactflow";
+import { BaseEdge, EdgeLabelRenderer, MarkerType, getBezierPath } from "reactflow";
 
-/**
- * AristaUML
- * Dibuja una arista UML con flechas, estereotipos y multiplicidades.
- * data: { relKind, direction, mA, mB, roleA, roleB, verb, owning }
- */
 export default function AristaUML(props) {
   const {
-    id,
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-    targetPosition,
-    data,
+    id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data,
   } = props;
 
   const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-    targetPosition,
+    sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
   });
 
+  // Flechas según dirección o herencia
   let markerStart, markerEnd;
   if (data?.relKind === "INHERIT") {
     markerEnd = { type: MarkerType.ArrowClosed };
@@ -46,11 +24,14 @@ export default function AristaUML(props) {
     }
   }
 
+  // Estereotipo
   const stereotype =
     data?.relKind === "COMP" ? "«comp»" :
     data?.relKind === "AGGR" ? "«agreg»" :
-    data?.relKind === "INHERIT" ? "«extends»" : "";
+    data?.relKind === "INHERIT" ? "«extends»" :
+    data?.relKind === "DEPEND" ? "«dep»" : "";
 
+  // Diamante textual en etiquetas laterales (lado dueño)
   const diamondFor = data?.relKind === "COMP" ? "◆" : (data?.relKind === "AGGR" ? "◇" : "");
   const showDiamondA = !!diamondFor && (data?.owning || "A") === "A";
   const showDiamondB = !!diamondFor && (data?.owning || "A") === "B";
@@ -60,9 +41,17 @@ export default function AristaUML(props) {
   const tgtLabelX = sourceX * 0.1 + targetX * 0.9;
   const tgtLabelY = sourceY * 0.1 + targetY * 0.9;
 
+  const isDepend = data?.relKind === "DEPEND";
+
   return (
     <>
-      <BaseEdge id={id} path={edgePath} markerStart={markerStart} markerEnd={markerEnd} />
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        markerStart={markerStart}
+        markerEnd={markerEnd}
+        style={isDepend ? { strokeDasharray: "6 4" } : undefined}
+      />
 
       <EdgeLabelRenderer>
         {(data?.verb || stereotype) && (

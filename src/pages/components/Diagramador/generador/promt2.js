@@ -1,49 +1,61 @@
-// Prompt para que la IA COMPLETE/ACTUALICE el DIAGRAMA en base a instrucciones del usuario.
-// Debe responder SOLO un JSON con un "delta" de acciones para aplicar al grafo.
+// Prompt IA reforzado: salida coherente y sin placeholders tipo "atributo1"
 
 export function buildPrompt2(currentModel, userInstruction) {
   const hint = JSON.stringify(currentModel, null, 2);
-
   return `
-Eres un asistente que actualiza un diagrama UML de clases de manera INCREMENTAL.
-Recibirás:
-- El modelo ACTUAL (entities, relations, joinTables).
-- Una instrucción del usuario en lenguaje natural.
+Eres un asistente que ACTUALIZA un diagrama UML de CLASES de forma INCREMENTAL.
+Devuelve SOLO un JSON válido con:
+{ "actions": [ ... ] }
 
-DEBES responder SOLO un JSON válido con la forma:
+REGLAS OBLIGATORIAS
+- ENTIDADES en PascalCase sin acentos.
+- ATRIBUTOS en camelCase sin acentos. "id" (Integer) VA PRIMERO cuando definas una lista completa.
+- TIPOS EXACTOS permitidos (NO sinónimos): 
+  String, Boolean, Byte, Short, Integer, Long, Float, Double, BigDecimal,
+  LocalDate, LocalDateTime, Instant, OffsetDateTime, UUID, byte[], Text.
+- Multiplicidades: "1", "0..1", "1..*", "0..*", "*".
+- PROHIBIDO usar nombres genéricos como "atributo1", "campo1", "propiedad1".
+  Usa nombres SEMÁNTICOS y propios del dominio (p.ej. Venta → fecha, subtotal, impuesto, total, metodoPago, clienteId…).
+- Evita relaciones duplicadas.
+- INHERIT (herencia): sin multiplicidades; dirección A->B (A extiende B).
+- DEPEND (dependencia): sin multiplicidades; "direction":"A->B".
+- AGGR/COMP: incluye "owning":"A"|"B" (lado del diamante). Si faltan multiplicidades, asume Whole:1 y Part:1..*.
+- N–M: { "op":"add_relation_nm", "a":"A", "b":"B", "joinName":"a_b" } (snake_case). Si falta joinName, genera "<a>_<b>".
 
+ACCIONES (ejemplos):
 {
   "actions": [
-    // Crear o actualizar entidades
-    { "op": "add_entity", "name": "Usuario", "attrs": [ { "name": "id", "type": "Integer" }, { "name": "nombre", "type": "String" } ] },
-    { "op": "update_entity", "name": "Usuario", "attrs": [ { "name": "telefono", "type": "Integer" } ] },
-    { "op": "remove_entity", "name": "Temporal" },
+    { "op":"add_entity", "name":"Producto",
+      "attrs":[ { "name":"id","type":"Integer" }, { "name":"nombre","type":"String" }, { "name":"precio","type":"BigDecimal" } ] },
+    { "op":"update_entity", "name":"Producto", "attrs":[ { "name":"stock","type":"Integer" } ] },
+    { "op":"rename_entity", "old":"Producto", "name":"Articulo" },
+    { "op":"remove_entity", "name":"Temporal" },
 
-    // Relaciones simples (no N-M)
-    { "op": "add_relation", "a": "Usuario", "b": "Perfil", "mA": "1", "mB": "N", "verb": "tiene", "relType": "1-N" },
+    { "op":"add_attr", "entity":"Usuario", "attr":{ "name":"telefonoMovil","type":"String" } },
+    { "op":"update_attr", "entity":"Usuario", "old":"telefono", "attr":{ "name":"telefonoMovil","type":"String" } },
+    { "op":"remove_attr", "entity":"Usuario", "name":"correo" },
+    { "op":"clear_attrs", "entity":"Usuario" },
 
-    // N-M (con entidad intermedia opcional)
-    { "op": "add_relation_nm", "a": "Usuario", "b": "Rol", "joinName": "Usuario_Rol" },
+    { "op":"add_relation", "a":"Usuario", "b":"Perfil", "mA":"1", "mB":"1..*", "verb":"tiene", "relKind":"ASSOC" },
+    { "op":"add_relation_nm", "a":"Usuario", "b":"Rol", "joinName":"usuario_rol" },
+    { "op":"add_relation", "a":"Empleado", "b":"Persona", "relKind":"INHERIT" },
+    { "op":"add_relation", "a":"Pedido", "b":"Linea", "mA":"1", "mB":"1..*", "relKind":"AGGR", "owning":"A" },
+    { "op":"add_relation", "a":"Carrito", "b":"Item", "mA":"1", "mB":"1..*", "relKind":"COMP", "owning":"A" },
+    { "op":"add_relation", "a":"Servicio", "b":"Repositorio", "relKind":"DEPEND", "direction":"A->B" },
+    { "op":"remove_relation", "a":"Usuario", "b":"Perfil" },
 
-    // Borrar relación (si se pide)
-    { "op": "remove_relation", "a": "Usuario", "b": "Perfil" }
+    // Para pedidos del usuario como “agrégame 15 atributos a Venta”
+    { "op":"add_attrs_smart", "entity":"Venta", "count":15 }
   ]
 }
 
-Reglas:
-- Usa tipos Java habituales: String, Integer, Long, Double, BigDecimal, Boolean, LocalDate, LocalDateTime, UUID, Text, byte[]...
-- No repitas acciones que no cambian nada.
-- Si el usuario pide "genera todo", puedes incluir varias acciones.
-- Para N–M: si no se especifica joinName, usa "<A>_<B>".
-- Las multiplicidades admitidas: "1", "0..1", "1..*", "0..*", "*" (también puedes usar "N" → equivale a "*").
+NO expliques nada. NO uses markdown. SOLO el JSON.
 
-No incluyas explicación, ni markdown. SOLO el JSON.
-
-────────────────────────────────────────────────────────────────────────
+────────────────────────────────
 MODELO ACTUAL
 ${hint}
 
-────────────────────────────────────────────────────────────────────────
+────────────────────────────────
 INSTRUCCIÓN DEL USUARIO
 ${userInstruction}
 `;

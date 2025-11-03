@@ -1,204 +1,287 @@
-// src/views/proyectos/Diagramador/SubDiagrama/useIA.js
-import { useMemo, useCallback } from "react";
+// Hook IA: ahora entiende "add_attrs_smart" y reemplaza listas genéricas por nombres reales.
+
+import { getDeltaFromUserText } from "../services/apiGemine";
 import { buildPrompt2 } from "../generador/promt2";
-import { getDeltaFromUserText } from "../services/iaDelta";
 import {
-  toSnake,
-  inferIdType,
-  midpoint,
-  decideRelType,
-  normalizeMult,
-} from "./utils";
+  ensureCoherentAttrs,
+  normalizeEntityName,
+  normalizeAttrName,
+  normalizeType,
+  normalizeMultiplicity,
+  cohereRelation,
+  joinNameFor,
+  isSameEdge,
+  smartSuggestAttrs
+} from "./iaCoherencia";
 
-/**
- * Encapsula el modelo, acciones y la interacción con IA.
- * Devuelve handleIA y utilidades CRUD para entidades/relaciones.
- */
-export default function useIA({
-  nodes, edges, setNodes, setEdges, scheduleSnapshot,
-}) {
-  const findByName = useCallback(
-    (name) =>
-      nodes.find(n => (n.data?.label || "").toLowerCase() === String(name).toLowerCase()),
-    [nodes]
-  );
+const norm = (s="") => s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+const isGeneric = (n="") => /^((atribu|propi|campo)[a-z]*)\d+$/i.test(n);
 
-  const modelFromState = useCallback(() => {
-    const entities = nodes.map(n => ({
-      id: n.id,
-      name: n.data?.label || n.id,
-      attrs: n.data?.attrs || []
-    }));
-    const relations = edges.map(e => ({
-      aId: e.source,
-      bId: e.target,
-      aName: nodes.find(n => n.id === e.source)?.data?.label || e.source,
-      bName: nodes.find(n => n.id === e.target)?.data?.label || e.target,
-      mA: e.data?.mA, mB: e.data?.mB,
-      verb: e.data?.verb || "",
-      relType: e.data?.relType || ""
-    }));
-    return { entities, relations, joinTables: [] };
-  }, [nodes, edges]);
+export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapshot }) {
+  const findByName = (name) => nodes.find(n => norm(n?.data?.label) === norm(name));
 
-  const ensureEntity = useCallback((name, atts = []) => {
+  const upsertEntity = (rawName, attrs=[]) => {
+    const name = normalizeEntityName(rawName);
     const ex = findByName(name);
+    const attrsFixed = ensureCoherentAttrs(attrs);
     if (ex) {
-      if (atts?.length) {
-        setNodes(ns => ns.map(n => {
-          if (n.id !== ex.id) return n;
-          const map = new Map((n.data?.attrs || []).map(a => [a.name.toLowerCase(), a]));
-          for (const a of atts) {
-            if (!a?.name) continue;
-            const k = a.name.toLowerCase();
-            if (map.has(k)) map.set(k, { ...map.get(k), type: a.type || map.get(k).type });
-            else map.set(k, { name: a.name, type: a.type || "String" });
-          }
-          return { ...n, data: { ...n.data, attrs: Array.from(map.values()) } };
-        }));
-        scheduleSnapshot();
+      const map = new Map((ex.data?.attrs || []).map(a => [norm(a.name), { ...a }]));
+      for (const a of attrsFixed) {
+        const k = norm(a.name);
+        const incoming = { name: normalizeAttrName(a.name), type: normalizeType(a.type) };
+        if (map.has(k)) map.set(k, { ...map.get(k), ...incoming });
+        else map.set(k, incoming);
       }
+      const merged = ensureCoherentAttrs(Array.from(map.values()));
+      setNodes(ns => ns.map(n => n.id===ex.id ? { ...n, data:{ ...n.data, label:name, attrs: merged } } : n));
       return ex.id;
     }
     const id = "n" + Date.now() + Math.random().toString(36).slice(2, 6);
-    const x = 120 + nodes.length * 40;
-    const y = 120 + nodes.length * 30;
-    setNodes(ns => ns.concat({
-      id,
-      type: "classNode",
-      position: { x, y },
-      data: { label: name, attrs: atts || [] }
-    }));
-    scheduleSnapshot();
+    const x = 120 + nodes.length * 40, y = 120 + nodes.length * 30;
+    setNodes(ns => ns.concat({ id, type:"classNode", position:{x,y}, data:{ label:name, attrs: ensureCoherentAttrs(attrsFixed) }}));
     return id;
-  }, [findByName, nodes.length, setNodes, scheduleSnapshot]);
+  };
 
-  const addEdgeSimple = useCallback((aId, bId, mA, mB, verb) => {
-    const relType = decideRelType(mA, mB);
-    const id = "e" + Date.now() + Math.random().toString(36).slice(2, 6);
-    setEdges(es => es.concat({
-      id,
-      source: aId,
-      target: bId,
-      type: "uml",
-      label: verb || "",
-      data: { mA: normalizeMult(mA), mB: normalizeMult(mB), verb: verb || "", relType }
-    }));
-  }, [setEdges]);
+  const setEntityAttrs = (rawName, attrs=[]) => {
+    const name = normalizeEntityName(rawName);
+    const ex = findByName(name); if (!ex) return;
+    setNodes(ns => ns.map(n => n.id===ex.id ? { ...n, data:{ ...n.data, attrs: ensureCoherentAttrs(attrs) } } : n));
+  };
 
-  const addRelationNM = useCallback((aId, bId, joinNameOpt) => {
-    const A = nodes.find(n => n.id === aId);
-    const B = nodes.find(n => n.id === bId);
-    if (!A || !B) return;
+  const removeAttr = (rawName, attrName) => {
+    const name = normalizeEntityName(rawName);
+    const ex = findByName(name); if (!ex) return;
+    const out = (ex.data?.attrs || []).filter(a => norm(a.name) !== norm(attrName));
+    setNodes(ns => ns.map(n => n.id===ex.id ? { ...n, data:{ ...n.data, attrs: ensureCoherentAttrs(out) } } : n));
+  };
 
-    const joinName = (joinNameOpt && joinNameOpt.trim())
-      || `${toSnake(A.data?.label || A.id)}_${toSnake(B.data?.label || B.id)}`;
+  const updateAttr = (rawName, oldName, next={}) => {
+    const name = normalizeEntityName(rawName);
+    const ex = findByName(name); if (!ex) return;
+    const arr = (ex.data?.attrs || []).map(a => {
+      if (norm(a.name) !== norm(oldName)) return a;
+      const nn = next.name ? normalizeAttrName(next.name) : a.name;
+      const tt = next.type ? normalizeType(next.type) : a.type;
+      return { name: nn, type: tt };
+    });
+    setNodes(ns => ns.map(n => n.id===ex.id ? { ...n, data:{ ...n.data, attrs: ensureCoherentAttrs(arr) } } : n));
+  };
 
-    const existent = findByName(joinName);
-    const joinId = existent?.id || ("n" + Date.now());
+  const edgeExists = (candidate) => edges.some(e => isSameEdge(e, candidate));
+  const addEdgeCoherent = ({ aId, bId, data }) => {
+    const candidate = { source:aId, target:bId, type:"uml", data:{ ...data } };
+    if (edgeExists(candidate)) return;
+    const id = "e" + Date.now() + Math.random().toString(36).slice(2,5);
+    setEdges(es => es.concat({ id, ...candidate }));
+  };
 
-    if (!existent) {
-      const pos = midpoint(A, B);
-      const tA = inferIdType(A);
-      const tB = inferIdType(B);
+  const addRelationSimple = (A,B,opts={}) => {
+    const coh = cohereRelation({ aName:A, bName:B, ...opts });
+    const aId = upsertEntity(coh.aName);
+    const bId = upsertEntity(coh.bName);
+    addEdgeCoherent({
+      aId, bId,
+      data:{
+        mA: normalizeMultiplicity(coh.mA),
+        mB: normalizeMultiplicity(coh.mB),
+        verb: coh.verb || "",
+        relType: opts.relType,
+        relKind: coh.relKind || "ASSOC",
+        owning: coh.owning,
+        direction: coh.direction
+      }
+    });
+  };
+
+  const addRelationNM = (A,B,joinNameOpt) => {
+    const aId = upsertEntity(A), bId = upsertEntity(B);
+    const aNode = nodes.find(n=>n.id===aId) || findByName(A);
+    const bNode = nodes.find(n=>n.id===bId) || findByName(B);
+    if(!aNode || !bNode) return;
+    const joinName = joinNameOpt?.trim() || joinNameFor(aNode.data?.label, bNode.data?.label);
+    const exist = findByName(joinName);
+    const joinId = exist?.id || ("n"+Date.now());
+    if(!exist){
+      const pos = { x: (aNode.position?.x + bNode.position?.x)/2 || 180,
+                    y: (aNode.position?.y + bNode.position?.y)/2 || 180 };
       setNodes(ns => ns.concat({
-        id: joinId,
-        type: "classNode",
-        position: { x: pos.x, y: pos.y },
-        data: {
-          label: joinName,
-          attrs: [
-            { name: `${toSnake(A.data?.label || A.id)}_id`, type: tA },
-            { name: `${toSnake(B.data?.label || B.id)}_id`, type: tB },
-          ]
+        id: joinId, type:"classNode", position:pos,
+        data:{ label: normalizeEntityName(joinName),
+          attrs: ensureCoherentAttrs([
+            { name:`${normalizeAttrName(aNode.data?.label)}_id`, type:"Integer" },
+            { name:`${normalizeAttrName(bNode.data?.label)}_id`, type:"Integer" },
+          ])
         }
       }));
     }
-
-    setEdges(es => es.filter(e =>
-      !((e.source === aId && e.target === bId) || (e.source === bId && e.target === aId))
-    ));
-
-    const e1 = {
-      id: "e" + Date.now() + "-a",
-      source: aId, target: joinId,
-      type: "uml",
-      data: { mA: "1..*", mB: "1", relType: "1-N" }
-    };
-    const e2 = {
-      id: "e" + Date.now() + "-b",
-      source: bId, target: joinId,
-      type: "uml",
-      data: { mA: "1..*", mB: "1", relType: "1-N" }
-    };
-    setEdges(es => es.concat(e1, e2));
-  }, [nodes, setNodes, setEdges, findByName]);
-
-  const removeRelationByNames = useCallback((aName, bName) => {
-    const A = findByName(aName);
-    const B = findByName(bName);
-    if (!A || !B) return;
-    setEdges(es => es.filter(e =>
-      !((e.source === A.id && e.target === B.id) || (e.source === B.id && e.target === A.id))
-    ));
-  }, [findByName, setEdges]);
-
-  const applyActions = useCallback((actions = []) => {
-    for (const act of actions) {
-      if (!act || !act.op) continue;
-
-      if (act.op === "add_entity") ensureEntity(act.name, act.attrs || []);
-      if (act.op === "update_entity") ensureEntity(act.name, act.attrs || []);
-      if (act.op === "remove_entity") {
-        const ex = findByName(act.name);
-        if (ex) {
-          setNodes(ns => ns.filter(n => n.id !== ex.id));
-          setEdges(es => es.filter(e => e.source !== ex.id && e.target !== ex.id));
-        }
-      }
-      if (act.op === "add_attr") ensureEntity(act.entity, [act.attr]);
-      if (act.op === "rename_entity") {
-        const ex = findByName(act.old);
-        if (ex && act.name) {
-          setNodes(ns => ns.map(n => n.id === ex.id ? { ...n, data: { ...n.data, label: act.name } } : n));
-        }
-      }
-      if (act.op === "add_relation") {
-        const aId = ensureEntity(act.a);
-        const bId = ensureEntity(act.b);
-        addEdgeSimple(aId, bId, act.mA || "1", act.mB || "1", act.verb || "");
-      }
-      if (act.op === "remove_relation") removeRelationByNames(act.a, act.b);
-      if (act.op === "add_relation_nm") {
-        const aId = ensureEntity(act.a);
-        const bId = ensureEntity(act.b);
-        addRelationNM(aId, bId, act.joinName);
-      }
-    }
-    scheduleSnapshot?.();
-  }, [ensureEntity, setNodes, setEdges, addEdgeSimple, addRelationNM, removeRelationByNames, scheduleSnapshot, findByName]);
-
-  const handleIA = useCallback(async (userText) => {
-    const current = modelFromState();
-    const delta = await getDeltaFromUserText({
-      text: userText,
-      promptBuilder: buildPrompt2,
-      currentModel: current
-    });
-    if (!delta || !Array.isArray(delta.actions)) {
-      alert("La IA no devolvió acciones válidas.");
-      return false;
-    }
-    applyActions(delta.actions);
-    return true;
-  }, [modelFromState, applyActions]);
-
-  return {
-    handleIA,
-    applyActions,
-    ensureEntity,
-    addEdgeSimple,
-    addRelationNM,
-    removeRelationByNames,
+    addEdgeCoherent({ aId, bId: joinId, data:{ mA:"1..*", mB:"1", relKind:"ASSOC", relType:"1-N" } });
+    addEdgeCoherent({ aId: bId, bId: joinId, data:{ mA:"1..*", mB:"1", relKind:"ASSOC", relType:"1-N" } });
   };
+
+  const removeRelationByNames = (A,B) => {
+    const a = findByName(A), b = findByName(B);
+    if(!a||!b) return;
+    setEdges(es => es.filter(e => !((e.source===a.id && e.target===b.id) || (e.source===b.id && e.target===a.id))));
+  };
+
+  /* ---------- Coerción y “smart attrs” ---------- */
+  function replaceGenericAttrs(entityName, attrs) {
+    const list = Array.isArray(attrs) ? attrs : [];
+    const onlyGeneric = list.filter(a => isGeneric(a?.name||"")).length >= Math.ceil(list.length*0.7);
+    if (!onlyGeneric) return ensureCoherentAttrs(list);
+    const wanted = list.length;
+    const suggested = smartSuggestAttrs(entityName, wanted);
+    return ensureCoherentAttrs(suggested);
+  }
+
+  function coerceActions(actions=[]) {
+    return actions.map(act => {
+      if (!act || !act.op) return act;
+      if (act.name) act.name = normalizeEntityName(act.name);
+      if (act.old)  act.old  = normalizeEntityName(act.old);
+      if (act.a)    act.a    = normalizeEntityName(act.a);
+      if (act.b)    act.b    = normalizeEntityName(act.b);
+      if (act.entity) act.entity = normalizeEntityName(act.entity);
+
+      switch (act.op) {
+        case "add_entity":
+        case "update_entity": {
+          const list = Array.isArray(act.attrs) ? act.attrs : [];
+          const clean = list.map(x => ({
+            name: normalizeAttrName(x?.name || ""),
+            type: normalizeType(x?.type || "String"),
+          }));
+          act.attrs = replaceGenericAttrs(act.name, clean);
+          break;
+        }
+        case "add_attr":
+        case "update_attr": {
+          act.attr = act.attr || {};
+          if (act.old) act.old = normalizeAttrName(act.old);
+          if (act.name) act.name = normalizeAttrName(act.name);
+          act.attr.name = normalizeAttrName(act.attr.name || "");
+          act.attr.type = normalizeType(act.attr.type || "String");
+          break;
+        }
+        case "add_relation": {
+          act.relKind = (act.relKind || "ASSOC").toUpperCase();
+          act.mA = normalizeMultiplicity(act.mA);
+          act.mB = normalizeMultiplicity(act.mB);
+          if (act.owning && !["A","B"].includes(act.owning)) act.owning = "A";
+          if (act.direction && !["A->B","B->A","BIDI"].includes(act.direction)) act.direction = "A->B";
+          break;
+        }
+        case "add_relation_nm":
+        case "add_relation_associative": {
+          if (!act.joinName && act.a && act.b) act.joinName = joinNameFor(act.a, act.b);
+          break;
+        }
+        case "add_attrs_smart": {
+          act.count = Math.max(1, parseInt(act.count||0, 10) || 1);
+          break;
+        }
+        default: break;
+      }
+      return act;
+    });
+  }
+
+  function recohereGraph() {
+    setNodes(ns => ns.map(n => ({
+      ...n,
+      data:{
+        ...n.data,
+        label: normalizeEntityName(n.data?.label || ""),
+        attrs: ensureCoherentAttrs(n.data?.attrs || [])
+      }
+    })));
+  }
+
+  async function handleIA(userText) {
+    const current = {
+      entities: nodes.map(n=>({ id:n.id, name:n.data?.label, attrs:n.data?.attrs||[] })),
+      relations: edges.map(e=>({ aId:e.source, bId:e.target, data:e.data||{} })),
+      joinTables: []
+    };
+
+    const delta = await getDeltaFromUserText({
+      text:userText, promptBuilder: buildPrompt2, currentModel: current
+    });
+
+    const acts = coerceActions(Array.isArray(delta?.actions) ? delta.actions : []);
+    for (const act of acts) {
+      switch (act.op) {
+        case "add_entity":
+        case "update_entity":
+          upsertEntity(act.name, act.attrs || []);
+          break;
+        case "rename_entity": {
+          const ex = findByName(act.old);
+          if (ex && act.name) {
+            setNodes(ns => ns.map(n => n.id===ex.id ? { ...n, data:{ ...n.data, label: act.name } } : n));
+          }
+          break;
+        }
+        case "remove_entity": {
+          const ex = findByName(act.name);
+          if (ex) {
+            setNodes(ns => ns.filter(n => n.id !== ex.id));
+            setEdges(es => es.filter(e => e.source !== ex.id && e.target !== ex.id));
+          }
+          break;
+        }
+        case "add_attr":
+          upsertEntity(act.entity, [act.attr]);
+          break;
+        case "remove_attr":
+          removeAttr(act.entity, act.name);
+          break;
+        case "update_attr":
+          updateAttr(act.entity, act.old, act.attr || {});
+          break;
+        case "clear_attrs":
+          setEntityAttrs(act.entity, []);
+          break;
+        case "add_attrs_smart": {
+          const exId = upsertEntity(act.entity, []);
+          const ex = findByName(act.entity);
+          const existing = (ex?.data?.attrs || []);
+          const have = new Set(existing.map(a => norm(a.name)));
+          const pool = smartSuggestAttrs(act.entity, act.count + 10);
+          const toAdd = [];
+          for (const a of pool) {
+            if (have.has(norm(a.name))) continue;
+            toAdd.push(a);
+            if (toAdd.length >= act.count) break;
+          }
+          const final = ensureCoherentAttrs(existing.concat(toAdd));
+          setNodes(ns => ns.map(n => n.id===exId ? { ...n, data:{ ...n.data, attrs: final } } : n));
+          break;
+        }
+        case "add_relation": {
+          const coh = cohereRelation({
+            aName: act.a, bName: act.b, relKind: act.relKind || "ASSOC",
+            mA: act.mA, mB: act.mB, verb: act.verb, owning: act.owning, direction: act.direction,
+            relType: act.relType
+          });
+          addRelationSimple(coh.aName, coh.bName, coh);
+          break;
+        }
+        case "remove_relation":
+          removeRelationByNames(act.a, act.b);
+          break;
+        case "add_relation_nm":
+        case "add_relation_associative":
+          addRelationNM(act.a, act.b, act.joinName || act.name);
+          break;
+        default: break;
+      }
+    }
+
+    recohereGraph();
+    scheduleSnapshot();
+    return true;
+  }
+
+  return { handleIA };
 }

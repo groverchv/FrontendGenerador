@@ -1,6 +1,7 @@
 // src/views/proyectos/Diagramador/SubDiagrama/Diagramador.jsx
 import {
   forwardRef,
+  useCallback,
   useMemo,
   useState,
   useImperativeHandle,
@@ -8,7 +9,7 @@ import {
 } from "react";
 import { useNodesState, useEdgesState } from "reactflow";
 
-// Subcomponentes (dejé tus mismas rutas)
+// Subcomponentes
 import LienzoDeDiagrama from "./SubDiagrama/LienzoDeDiagrama";
 import NodoClase from "./SubDiagrama/NodoClase";
 import AristaUML from "./SubDiagrama/AristaUML";
@@ -36,7 +37,7 @@ const Diagramador = forwardRef(function Diagramador(
   const [activeTab, setActiveTab] = useState("entidad");
   const [iaOpen, setIaOpen] = useState(false);
 
-  // Colaboración (snapshots, cursores, handlers RF)
+  // Colaboración
   const {
     publishSnapshot,
     scheduleSnapshot,
@@ -45,28 +46,45 @@ const Diagramador = forwardRef(function Diagramador(
     onConnect,
     onNodeDragStop,
   } = useColaboracion({
-    sock, projectId, nodes, edges, setNodes, setEdges, rfOnNodesChange, rfOnEdgesChange,
+    sock,
+    projectId,
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    rfOnNodesChange,
+    rfOnEdgesChange,
   });
 
   // Persistencia + import/export
   const versionRef = useRef(null);
-  const {
-    persistNow, exportJSON, exportPUML, importFromJSONText, importFromPUMLText,
-  } = usePersistenciaYArchivo({
-    projectId, projectName, nodes, edges, setNodes, setEdges, publishSnapshot, versionRef,
-  });
+  const { persistNow, exportJSON, exportPUML, importFromJSONText, importFromPUMLText } =
+    usePersistenciaYArchivo({
+      projectId,
+      projectName,
+      nodes,
+      edges,
+      setNodes,
+      setEdges,
+      publishSnapshot,
+      versionRef,
+    });
 
   // IA (acciones estructurales)
   const { handleIA } = useIA({
-    nodes, edges, setNodes, setEdges, scheduleSnapshot,
-  });
-
-  // Generación de código (hook nuevo)
-  const { handleGenerate } = useGeneracionCodigo({
-    projectName,
     nodes,
     edges,
-    // packageBase: "com.example.app", // opcional
+    setNodes,
+    setEdges,
+    scheduleSnapshot,
+  });
+
+  // Generación de código (HOOK nuevo)
+  const { handleGenerate } = useGeneracionCodigo({
+    projectName,
+    packageBase: "com.example.app",
+    nodes,
+    edges,
   });
 
   useImperativeHandle(ref, () => ({
@@ -118,26 +136,41 @@ const Diagramador = forwardRef(function Diagramador(
           setSelectedId(id);
           scheduleSnapshot();
         }}
-        onClear={() => { setNodes([]); setEdges([]); scheduleSnapshot(); }}
+        onClear={() => {
+          setNodes([]);
+          setEdges([]);
+          scheduleSnapshot();
+        }}
         onExport={persistNow}
         onGenerate={handleGenerate}
         onOpenIA={() => setIaOpen(true)}
-        // CRUD de atributos
+        // CRUD de atributos de la entidad seleccionada
         onChangeName={(name) =>
-          selectedId && setNodes(ns =>
-            ns.map(n => n.id === selectedId ? { ...n, data: { ...n.data, label: name } } : n)
+          selectedId &&
+          setNodes((ns) =>
+            ns.map((n) =>
+              n.id === selectedId
+                ? { ...n, data: { ...n.data, label: name } }
+                : n
+            )
           )
         }
         onAddAttr={(attr) =>
-          selectedId && setNodes(ns =>
-            ns.map(n => n.id !== selectedId
-              ? n
-              : { ...n, data: { ...n.data, attrs: [...(n.data?.attrs || []), attr] } })
+          selectedId &&
+          setNodes((ns) =>
+            ns.map((n) => {
+              if (n.id !== selectedId) return n;
+              return {
+                ...n,
+                data: { ...n.data, attrs: [...(n.data?.attrs || []), attr] },
+              };
+            })
           )
         }
         onUpdateAttr={(index, value) =>
-          selectedId && setNodes(ns =>
-            ns.map(n => {
+          selectedId &&
+          setNodes((ns) =>
+            ns.map((n) => {
               if (n.id !== selectedId) return n;
               const arr = [...(n.data?.attrs || [])];
               arr[index] = value;
@@ -146,8 +179,9 @@ const Diagramador = forwardRef(function Diagramador(
           )
         }
         onRemoveAttr={(index) =>
-          selectedId && setNodes(ns =>
-            ns.map(n => {
+          selectedId &&
+          setNodes((ns) =>
+            ns.map((n) => {
               if (n.id !== selectedId) return n;
               const arr = [...(n.data?.attrs || [])];
               arr.splice(index, 1);
@@ -157,8 +191,10 @@ const Diagramador = forwardRef(function Diagramador(
         }
         onDeleteEntity={() => {
           if (!selectedId) return;
-          setNodes(ns => ns.filter(n => n.id !== selectedId));
-          setEdges(es => es.filter(e => e.source !== selectedId && e.target !== selectedId));
+          setNodes((ns) => ns.filter((n) => n.id !== selectedId));
+          setEdges((es) =>
+            es.filter((e) => e.source !== selectedId && e.target !== selectedId)
+          );
           scheduleSnapshot();
         }}
         // Relaciones
@@ -171,13 +207,21 @@ const Diagramador = forwardRef(function Diagramador(
               target: targetId,
               type: "uml",
               label: verb,
-              data: { mA, mB, verb, relType: tipo, ...meta },
+              data: {
+                mA,
+                mB,
+                verb,
+                relType: tipo,
+                ...meta, // relKind / owning / direction / cascade / orphanRemoval / inheritStrategy ...
+              },
             })
           );
           scheduleSnapshot();
         }}
         onRelacionNM={({ aId, bId, nombreIntermedia }) => {
-          alert("Usa el hook useIA.addRelationNM si quieres manejar NM aquí 🙂");
+          alert(
+            "Usa el hook useIA.addRelationNM o crea manualmente la entidad intermedia.\n(El generador de código la soporta automáticamente)."
+          );
         }}
         onUpdateEdge={(edgeId, partial) => {
           setEdges((es) =>
