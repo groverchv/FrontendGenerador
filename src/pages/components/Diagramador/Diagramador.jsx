@@ -1,4 +1,3 @@
-// src/views/proyectos/Diagramador/SubDiagrama/Diagramador.jsx
 import {
   forwardRef,
   useCallback,
@@ -36,6 +35,9 @@ const Diagramador = forwardRef(function Diagramador(
   const [selectedId, setSelectedId] = useState(null);
   const [activeTab, setActiveTab] = useState("entidad");
   const [iaOpen, setIaOpen] = useState(false);
+
+  // Posición de la “última acción” del usuario (click/pane/drag stop)
+  const lastActionRef = useRef({ x: 140, y: 120 });
 
   // Colaboración
   const {
@@ -79,7 +81,7 @@ const Diagramador = forwardRef(function Diagramador(
     scheduleSnapshot,
   });
 
-  // Generación de código (HOOK nuevo)
+  // Generación de código
   const { handleGenerate } = useGeneracionCodigo({
     projectName,
     packageBase: "com.example.app",
@@ -101,6 +103,9 @@ const Diagramador = forwardRef(function Diagramador(
     [nodes, selectedId]
   );
 
+  // Pequeño “jitter” para no encimar varias creaciones seguidas en el mismo punto
+  const jitter = (n) => (n % 4) * 24;
+
   return (
     <div className="w-full h-[calc(100vh-56px)] md:grid md:grid-cols-[1fr_340px] overflow-hidden">
       {/* Lienzo */}
@@ -114,6 +119,8 @@ const Diagramador = forwardRef(function Diagramador(
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
         onNodeClick={(_, node) => setSelectedId(node.id)}
+        // ← guardamos dónde estuvo la última acción para crear ahí nuevas entidades
+        onLastAction={(p) => (lastActionRef.current = p)}
       />
 
       {/* Panel lateral */}
@@ -125,11 +132,12 @@ const Diagramador = forwardRef(function Diagramador(
         edges={edges}
         onAddEntity={() => {
           const id = String(Date.now());
+          const base = lastActionRef.current || { x: 100, y: 100 };
           setNodes((ns) =>
             ns.concat({
               id,
               type: "classNode",
-              position: { x: 100 + ns.length * 40, y: 100 + ns.length * 30 },
+              position: { x: base.x + jitter(ns.length), y: base.y + jitter(ns.length) },
               data: { label: `Entidad${ns.length + 1}`, attrs: [] },
             })
           );
