@@ -1,7 +1,7 @@
 // src/views/proyectos/Diagramador/SubDiagrama/useColaboracion.js
 import { useMemo, useRef, useCallback, useEffect } from "react";
 import { addEdge } from "reactflow";
-import { debounce, throttle } from "./utils";
+import { debounce, throttle, findBestHandle, updateNodesWithHandleUsage } from "./utils";
 
 /**
  * Maneja snapshots, cursores y suscripciones STOMP.
@@ -78,11 +78,15 @@ export default function useColaboracion({
           const n = JSON.parse(msg.nodes);
           const e = JSON.parse(msg.edges);
           if (Array.isArray(n) && Array.isArray(e)) {
-            setNodes(n);
+            // Actualiza nodos con uso de handles
+            const updatedNodes = updateNodesWithHandleUsage(n, e);
+            setNodes(updatedNodes);
             setEdges(e);
             versionRef.current = msg.version ?? versionRef.current;
           }
-        } catch {}
+        } catch {
+          // Ignorar errores de parseo
+        }
       }
     });
 
@@ -121,15 +125,23 @@ export default function useColaboracion({
           nodes: JSON.stringify(nodes),
           edges: JSON.stringify(edges),
         });
-      } catch {}
+      } catch {
+        // Ignorar errores
+      }
     });
 
     return () => {
-      try { sock.unsubscribe(subUpdates); } catch {}
-      try { sock.unsubscribe(subCursors); } catch {}
-      try { offConnect?.(); } catch {}
+      try { sock.unsubscribe(subUpdates); } catch { /* ignore */ }
+      try { sock.unsubscribe(subCursors); } catch { /* ignore */ }
+      try { offConnect?.(); } catch { /* ignore */ }
     };
   }, [sock, projectId, topicUpdates, topicCursors, destUpdate, nodes, edges, setNodes, setEdges]);
+
+  // Actualiza el uso de handles cuando cambian los edges
+  useEffect(() => {
+    setNodes((ns) => updateNodesWithHandleUsage(ns, edges));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edges.length]);
 
   // ---- handlers para ReactFlow
   const onNodesChange = useCallback(
@@ -149,17 +161,49 @@ export default function useColaboracion({
   const onEdgesChange = useCallback(
     (changes) => {
       rfOnEdgesChange(changes);
+      
+      // Si hay eliminaciones, actualiza el uso de handles
+      const hasRemoval = changes.some(ch => ch.type === 'remove');
+      if (hasRemoval) {
+        setNodes((ns) => updateNodesWithHandleUsage(ns, edges.filter(e => 
+          !changes.some(ch => ch.type === 'remove' && ch.id === e.id)
+        )));
+      }
+      
       scheduleSnapshot();
     },
-    [rfOnEdgesChange, scheduleSnapshot]
+    [rfOnEdgesChange, setNodes, edges, scheduleSnapshot]
   );
 
   const onConnect = useCallback(
     (params) => {
-      setEdges((eds) => addEdge({ ...params, animated: true, type: "uml", data: {} }, eds));
+      // Si no hay handles específicos, busca el mejor disponible
+      const sourceHandle = params.sourceHandle || findBestHandle(params.source, edges, true);
+      const targetHandle = params.targetHandle || findBestHandle(params.target, edges, false);
+      
+      setEdges((eds) => {
+        const newEdge = { 
+          ...params, 
+          sourceHandle,
+          targetHandle,
+          animated: true, 
+          type: "uml", 
+          data: {} 
+        };
+        return addEdge(newEdge, eds);
+      });
+      
+      // Actualiza el uso de handles en los nodos
+      setNodes((ns) => updateNodesWithHandleUsage(ns, [...edges, { 
+        source: params.source, 
+        target: params.target,
+        sourceHandle,
+        targetHandle 
+      }]));
+      
       scheduleSnapshot();
     },
-    [setEdges, scheduleSnapshot]
+    [setEdges, setNodes, edges, scheduleSnapshot]
   );
 
   const onNodeDragStop = useCallback(() => {

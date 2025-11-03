@@ -1,11 +1,11 @@
 // src/views/proyectos/Diagramador/SubDiagrama/AristaUML.jsx
 import React from "react";
-import { BaseEdge, EdgeLabelRenderer, getBezierPath } from "reactflow";
+import { BaseEdge, EdgeLabelRenderer, getStraightPath } from "reactflow";
 
 /**
  * data:
  *  - relKind: "ASSOC" | "INHERIT" | "DEPEND" | "AGGR" | "COMP"
- *  - direction: "A->B" | "B->A"
+ *  - direction: "A->B" | "B->A" | "NONE"
  *  - owning: "A" | "B"
  *  - strokeWidth?: number
  *  - stroke?: string
@@ -18,25 +18,35 @@ export default function AristaUML(props) {
     id,
     sourceX, sourceY,
     targetX, targetY,
-    sourcePosition, targetPosition,
     data,
   } = props;
 
   const kind        = data?.relKind    ?? "ASSOC";
-  const dir         = data?.direction  ?? "A->B";
+  const dir         = data?.direction  ?? "NONE";
   const owning      = data?.owning     ?? "A";
   const strokeWidth = data?.strokeWidth ?? 2;
   const stroke      = data?.stroke ?? "#444";
   const markerScale = data?.markerScale ?? 4.0;
 
-  const labelsBesideMarker = data?.labelsBesideMarker ?? true; // <<— NUEVO
+  const labelsBesideMarker = data?.labelsBesideMarker ?? true;
 
   const isDepend = kind === "DEPEND";
   const isInherit = kind === "INHERIT";
+  const isAssoc = kind === "ASSOC";
   const hasDiamondStart = (kind === "AGGR" || kind === "COMP") && owning === "A";
   const hasDiamondEnd   = (kind === "AGGR" || kind === "COMP") && owning === "B";
-  const hasTriStart     = (isInherit && dir === "B->A") || (isDepend && dir === "B->A");
-  const hasTriEnd       = (isInherit && dir === "A->B") || (isDepend && dir === "A->B");
+  
+  // Herencia: triángulo cerrado blanco
+  const hasTriStart     = isInherit && dir === "B->A";
+  const hasTriEnd       = isInherit && dir === "A->B";
+  
+  // Dependencia: flecha abierta
+  const hasArrowStart   = isDepend && dir === "B->A";
+  const hasArrowEnd     = isDepend && dir === "A->B";
+  
+  // Asociación con dirección: flecha simple cerrada
+  const hasAssocArrowStart = isAssoc && dir === "B->A";
+  const hasAssocArrowEnd   = isAssoc && dir === "A->B";
 
   const dx = targetX - sourceX;
   const dy = targetY - sourceY;
@@ -51,17 +61,18 @@ export default function AristaUML(props) {
   // Tamaños de marcadores
   const D = 6 * markerScale;       // semidiagonal del rombo
   const L = 2 * D;                 // largo rombo
-  const T = 10 * markerScale;      // profundidad triángulo
+  const T = 10 * markerScale;      // profundidad triángulo/flecha
   const GAP = 2 * markerScale;     // respiración
 
   // Offset del trazo para no atravesar la figura
   let startOffset = 0;
   let endOffset = 0;
+  
   if (hasDiamondStart) startOffset = L + GAP;
-  else if (hasTriStart) startOffset = T + GAP;
+  else if (hasTriStart || hasArrowStart || hasAssocArrowStart) startOffset = T + GAP;
 
-  if (hasDiamondEnd)   endOffset = L + GAP;
-  else if (hasTriEnd)  endOffset = T + GAP;
+  if (hasDiamondEnd) endOffset = L + GAP;
+  else if (hasTriEnd || hasArrowEnd || hasAssocArrowEnd) endOffset = T + GAP;
 
   // Puntos del trazo (ya desplazados)
   const sx = sourceX + ux * startOffset;
@@ -69,10 +80,10 @@ export default function AristaUML(props) {
   const tx = targetX - ux * endOffset;
   const ty = targetY - uy * endOffset;
 
-  const [edgePath, labelX, labelY] = getBezierPath({
+  // Usar línea RECTA en lugar de Bezier
+  const [edgePath, labelX, labelY] = getStraightPath({
     sourceX: sx, sourceY: sy,
     targetX: tx, targetY: ty,
-    sourcePosition, targetPosition,
   });
 
   /* ==================== Etiquetas ==================== */
@@ -90,8 +101,8 @@ export default function AristaUML(props) {
   const alongEnd = (labelsBesideMarker ? ALONG_NEAR : ALONG_FAR);
   const normalEnd = (labelsBesideMarker ? NORMAL_NEAR : NORMAL_FAR);
 
-  const tipStart = hasDiamondStart ? L : (hasTriStart ? T : 0);
-  const tipEnd   = hasDiamondEnd   ? L : (hasTriEnd   ? T : 0);
+  const tipStart = hasDiamondStart ? L : (hasTriStart || hasArrowStart || hasAssocArrowStart ? T : 0);
+  const tipEnd   = hasDiamondEnd   ? L : (hasTriEnd || hasArrowEnd || hasAssocArrowEnd ? T : 0);
 
   // Coloca la etiqueta A justo después del marcador del inicio
   const srcLabelX = sourceX + ux * (tipStart + GAP + alongStart) + nx * normalStart;
@@ -102,6 +113,8 @@ export default function AristaUML(props) {
   const tgtLabelY = targetY - uy * (tipEnd + GAP + alongEnd) + ny * normalEnd;
 
   /* ==================== Figuras ==================== */
+  
+  // ROMBO para Agregación (blanco) y Composición (negro)
   const DiamondPathStart = (
     <path
       d={`M 0 0 L ${D} ${-D} L ${L} 0 L ${D} ${D} Z`}
@@ -118,12 +131,15 @@ export default function AristaUML(props) {
       strokeWidth={strokeWidth}
     />
   );
+  
+  // TRIÁNGULO CERRADO para Herencia (blanco con borde)
   const TriangleStart = (
     <path
       d={`M 0 0 L ${T} ${-T} L ${T} ${T} Z`}
       fill="white"
       stroke={stroke}
       strokeWidth={strokeWidth}
+      strokeLinejoin="miter"
     />
   );
   const TriangleEnd = (
@@ -132,6 +148,49 @@ export default function AristaUML(props) {
       fill="white"
       stroke={stroke}
       strokeWidth={strokeWidth}
+      strokeLinejoin="miter"
+    />
+  );
+  
+  // FLECHA ABIERTA para Dependencia (solo líneas, sin relleno)
+  const ArrowStart = (
+    <path
+      d={`M 0 0 L ${T} ${-T} M 0 0 L ${T} ${T}`}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  );
+  const ArrowEnd = (
+    <path
+      d={`M 0 0 L ${-T} ${-T} M 0 0 L ${-T} ${T}`}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  );
+  
+  // FLECHA SIMPLE CERRADA para Asociación direccional (rellena)
+  const AssocArrowStart = (
+    <path
+      d={`M 0 0 L ${T} ${-T} L ${T} ${T} Z`}
+      fill={stroke}
+      stroke={stroke}
+      strokeWidth={strokeWidth}
+      strokeLinejoin="miter"
+    />
+  );
+  const AssocArrowEnd = (
+    <path
+      d={`M 0 0 L ${-T} ${-T} L ${-T} ${T} Z`}
+      fill={stroke}
+      stroke={stroke}
+      strokeWidth={strokeWidth}
+      strokeLinejoin="miter"
     />
   );
 
@@ -144,20 +203,29 @@ export default function AristaUML(props) {
           stroke,
           strokeWidth,
           strokeLinecap: "round",
-          ...(isDepend ? { strokeDasharray: "6 4" } : null),
+          ...(isDepend ? { strokeDasharray: "6 4" } : {}),
         }}
       />
 
       {/* Marcadores sueltos, con la punta en el puerto */}
       <svg style={{ position: "absolute", overflow: "visible", pointerEvents: "none" }}>
-        {(hasDiamondStart || hasTriStart) && (
+        {/* Marcador al inicio (source) */}
+        {(hasDiamondStart || hasTriStart || hasArrowStart || hasAssocArrowStart) && (
           <g transform={`translate(${sourceX}, ${sourceY}) rotate(${angleDeg})`}>
-            {hasDiamondStart ? DiamondPathStart : TriangleStart}
+            {hasDiamondStart && DiamondPathStart}
+            {hasTriStart && TriangleStart}
+            {hasArrowStart && ArrowStart}
+            {hasAssocArrowStart && AssocArrowStart}
           </g>
         )}
-        {(hasDiamondEnd || hasTriEnd) && (
+        
+        {/* Marcador al final (target) */}
+        {(hasDiamondEnd || hasTriEnd || hasArrowEnd || hasAssocArrowEnd) && (
           <g transform={`translate(${targetX}, ${targetY}) rotate(${angleDeg})`}>
-            {hasDiamondEnd ? DiamondPathEnd : TriangleEnd}
+            {hasDiamondEnd && DiamondPathEnd}
+            {hasTriEnd && TriangleEnd}
+            {hasArrowEnd && ArrowEnd}
+            {hasAssocArrowEnd && AssocArrowEnd}
           </g>
         )}
       </svg>

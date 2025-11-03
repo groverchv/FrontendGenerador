@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ProjectsApi } from "../../../api/projects";
 import { DiagramsApi } from "../../../api/diagrams";
@@ -7,7 +7,7 @@ import ReactFlow, {
   Background,
   BaseEdge,
   EdgeLabelRenderer,
-  getBezierPath,
+  getStraightPath,
   Handle,
   Position,
   ReactFlowProvider,
@@ -64,18 +64,14 @@ function UmlEdge({
   sourceY,
   targetX,
   targetY,
-  sourcePosition,
-  targetPosition,
   data,
   markerEnd,
 }) {
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const [edgePath, labelX, labelY] = getStraightPath({
     sourceX,
     sourceY,
     targetX,
     targetY,
-    sourcePosition,
-    targetPosition,
   });
 
   return (
@@ -106,12 +102,12 @@ function UmlEdge({
 function PreviewFlowInner({ nodes, edges, nodeTypes, edgeTypes }) {
   const instRef = useRef(null);
 
-  const doFit = () => {
+  const doFit = useCallback(() => {
     const i = instRef.current;
     if (!i) return;
     // permitir alejar mucho para diagramas grandes
     i.fitView({ padding: 0.08, includeHiddenNodes: true, minZoom: 0.01, maxZoom: 1 });
-  };
+  }, []);
 
   const onInit = (instance) => {
     instRef.current = instance;
@@ -123,16 +119,14 @@ function PreviewFlowInner({ nodes, edges, nodeTypes, edgeTypes }) {
   useEffect(() => {
     if (!instRef.current) return;
     doFit();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, edges]);
+  }, [nodes, edges, doFit]);
 
   // re-encajar si cambia el tamaño de la tarjeta
   useEffect(() => {
     const onResize = () => doFit();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [doFit]);
 
   return (
     <ReactFlow

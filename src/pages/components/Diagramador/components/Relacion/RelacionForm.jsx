@@ -4,14 +4,13 @@ import React, { useEffect, useMemo, useState } from "react";
 /** Multiplicidades válidas */
 const SIDE_TYPES = ["0..1", "1", "0..*", "1..*", "*"];
 
-/** Mapa de tipos de relación (UI) */
+/** Mapa de tipos de relación (UI) - Solo 5 tipos UML estándar */
 const REL_KIND_OPTS = [
   { value: "ASSOC", label: "Asociación" },
   { value: "AGGR",  label: "Agregación (◇)" },
   { value: "COMP",  label: "Composición (◆)" },
   { value: "INHERIT", label: "Herencia (A hereda de B)" },
   { value: "DEPEND",  label: "Dependencia" },
-  { value: "NM",      label: "Entidad asociativa (N–M)" },
 ];
 
 const MANY_SET = new Set(["0..*", "1..*", "*"]);
@@ -80,10 +79,9 @@ export default function RelacionForm({
   const [interName, setInterName] = useState("");
 
   const same = a && b && a === b;
-  const isNM = relKind === "NM";
   const isInherit = relKind === "INHERIT";
   const isDepend  = relKind === "DEPEND";
-  const needsMult = !isInherit && !isDepend && !isNM;
+  const needsMult = !isInherit && !isDepend;
   const needsOwning = relKind === "AGGR" || relKind === "COMP";
   const needsDirection = isDepend || !isInherit;
 
@@ -100,6 +98,14 @@ export default function RelacionForm({
     setInterName("");
   }, [editing]);
 
+  const decision = useMemo(() => {
+    if (!needsMult) return { mode: "SPECIAL" };
+    return decideTipo(aTipo, bTipo);
+  }, [needsMult, aTipo, bTipo]);
+
+  // Detecta automáticamente si es N-M basándose en las multiplicidades
+  const isNM = decision.mode === "NM" && relKind === "ASSOC";
+
   useEffect(() => {
     if (!editing && isNM && a && b && !interName) {
       setInterName(suggestJoinName(nameOf(a), nameOf(b)));
@@ -107,11 +113,6 @@ export default function RelacionForm({
     if (!isNM && interName) setInterName("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [a, b, isNM]);
-
-  const decision = useMemo(() => {
-    if (!needsMult) return { mode: "SPECIAL" };
-    return decideTipo(aTipo, bTipo);
-  }, [needsMult, aTipo, bTipo]);
 
   const canCreate =
     !!a && !!b && !same &&
@@ -132,6 +133,8 @@ export default function RelacionForm({
 
   const crear = () => {
     if (!canCreate) return;
+    
+    // Si es N-M (detectado automáticamente por multiplicidades), crear entidad intermedia
     if (isNM) {
       onCreateNM?.({
         aId: a,
@@ -141,7 +144,13 @@ export default function RelacionForm({
       clearForm();
       return;
     }
-    const meta = { relKind: isInherit ? "INHERIT" : isDepend ? "DEPEND" : relKind, direction, owning: needsOwning ? owning : undefined };
+    
+    // Relaciones simples (ASSOC, AGGR, COMP, INHERIT, DEPEND)
+    const meta = { 
+      relKind: isInherit ? "INHERIT" : isDepend ? "DEPEND" : relKind, 
+      direction, 
+      owning: needsOwning ? owning : undefined 
+    };
     const payload = {
       sourceId: a,
       targetId: b,
@@ -177,113 +186,181 @@ export default function RelacionForm({
   const dirLabelBtoA = `${b ? nameOf(b) : "B"} → ${a ? nameOf(a) : "A"}`;
 
   return (
-    <>
-      <div className="flex items-center justify-between">
-        <div className="font-semibold">
-          {editing ? "Editar relación" : "Nueva relación"}
-        </div>
-        {/* 🔕 Sin botón IA local */}
+    <div className="space-y-4">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold text-gray-800">
+          {editing ? "✏️ Editar relación" : "➕ Nueva relación"}
+        </h3>
       </div>
 
-      {/* Entidad A */}
-      <div className="grid grid-cols-[1fr_auto] gap-2 items-center mt-2">
+      {/* 1️⃣ TIPO DE RELACIÓN (Primero) */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-200">
+        <label className="block text-sm font-semibold text-blue-900 mb-2">
+          🔗 Tipo de relación
+        </label>
+        <select 
+          className="w-full border-2 border-blue-300 rounded-lg px-3 py-2.5 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all" 
+          value={relKind} 
+          onChange={(e) => setRelKind(e.target.value)}
+        >
+          {REL_KIND_OPTS.map((k) => (
+            <option key={k.value} value={k.value}>{k.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* 2️⃣ ENTIDADES (Segundo) */}
+      <div className="bg-white p-4 rounded-xl border-2 border-gray-200">
+        <h4 className="text-sm font-semibold text-gray-700 mb-3">📦 Entidades a relacionar</h4>
+        
+        {/* Entidad A */}
+        <div className="mb-3">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Entidad A
+          </label>
+          <select 
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:border-blue-400" 
+            value={a} 
+            onChange={(e) => setA(e.target.value)}
+          >
+            <option value="">seleccionar</option>
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Entidad B */}
         <div>
-          <div className="text-xs text-gray-600">Entidad A</div>
-          <div className="font-semibold min-h-[20px]">{a ? nameOf(a) : "\u00A0"}</div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Entidad B
+          </label>
+          <select 
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:border-blue-400" 
+            value={b} 
+            onChange={(e) => setB(e.target.value)}
+          >
+            <option value="">seleccionar</option>
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
         </div>
-        <select className="border rounded-md px-2 py-1" value={a} onChange={(e) => setA(e.target.value)}>
-          <option value="">Seleccionar</option>
-          {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
       </div>
 
-      {/* Entidad B */}
-      <div className="grid grid-cols-[1fr_auto] gap-2 items-center mt-2">
-        <div>
-          <div className="text-xs text-gray-600">Entidad B</div>
-          <div className="font-semibold min-h-[20px]">{b ? nameOf(b) : "\u00A0"}</div>
-        </div>
-        <select className="border rounded-md px-2 py-1" value={b} onChange={(e) => setB(e.target.value)}>
-          <option value="">Seleccionar</option>
-          {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
-      </div>
-
-      {/* Tipo de relación */}
-      <div className="mt-2">
-        <label className="text-xs text-gray-600">Tipo de relación</label>
-        <select className="w-full border rounded-md px-2 py-1 mt-1" value={relKind} onChange={(e) => setRelKind(e.target.value)}>
-          {REL_KIND_OPTS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-        </select>
-      </div>
-
-      {/* Multiplicidades */}
+      {/* 3️⃣ MULTIPLICIDADES (Si aplica) */}
       {needsMult && (
-        <>
-          <div className="grid grid-cols-[1fr_auto] gap-2 items-center mt-2">
+        <div className="bg-purple-50 p-4 rounded-xl border border-purple-200">
+          <h4 className="text-sm font-semibold text-purple-900 mb-3">🔢 Multiplicidades</h4>
+          
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="text-xs text-gray-600">Multiplicidad ({a ? nameOf(a) : "A"})</div>
-              <div className="font-semibold min-h-[20px]">{aTipo}</div>
+              <label className="block text-xs font-medium text-purple-700 mb-1">
+                {a ? nameOf(a) : "A"}
+              </label>
+              <select 
+                className="w-full border border-purple-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-purple-400" 
+                value={aTipo} 
+                onChange={(e) => setATipo(e.target.value)}
+              >
+                {SIDE_TYPES.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
             </div>
-            <select className="border rounded-md px-2 py-1" value={aTipo} onChange={(e) => setATipo(e.target.value)}>
-              {SIDE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+
+            <div>
+              <label className="block text-xs font-medium text-purple-700 mb-1">
+                {b ? nameOf(b) : "B"}
+              </label>
+              <select 
+                className="w-full border border-purple-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-purple-400" 
+                value={bTipo} 
+                onChange={(e) => setBTipo(e.target.value)}
+              >
+                {SIDE_TYPES.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4️⃣ CONFIGURACIÓN ADICIONAL */}
+      <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3">
+        <h4 className="text-sm font-semibold text-gray-700 mb-2">⚙️ Configuración</h4>
+        
+        {/* Verbo */}
+        {!isInherit && (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Verbo (opcional)
+            </label>
+            <input
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+              value={verb}
+              onChange={(e) => setVerb(e.target.value)}
+              placeholder="Ej: gestiona, tiene, pertenece a…"
+            />
+          </div>
+        )}
+
+        {/* Owning side */}
+        {needsOwning && (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Lado contenedor (diamante)
+            </label>
+            <select 
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400" 
+              value={owning} 
+              onChange={(e) => setOwning(e.target.value)}
+            >
+              <option value="A">{a ? nameOf(a) : "A"}</option>
+              <option value="B">{b ? nameOf(b) : "B"}</option>
             </select>
           </div>
+        )}
 
-          <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
-            <div>
-              <div className="text-xs text-gray-600">Multiplicidad ({b ? nameOf(b) : "B"})</div>
-              <div className="font-semibold min-h-[20px]">{bTipo}</div>
-            </div>
-            <select className="border rounded-md px-2 py-1" value={bTipo} onChange={(e) => setBTipo(e.target.value)}>
-              {SIDE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        {/* Dirección */}
+        {needsDirection && (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Dirección (flechas)
+            </label>
+            <select 
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400" 
+              value={direction} 
+              onChange={(e) => setDirection(e.target.value)}
+            >
+              <option value="A->B">{dirLabelAtoB}</option>
+              <option value="B->A">{dirLabelBtoA}</option>
+              {!isDepend && !isInherit && <option value="NONE">↔ Bidireccional (sin flecha)</option>}
             </select>
           </div>
-        </>
-      )}
+        )}
+      </div>
 
-      {/* Verbo opcional */}
-      {!isInherit && (
-        <div className="mt-2">
-          <label className="text-xs text-gray-600">Verbo (opcional)</label>
-          <input
-            className="w-full border rounded-md px-2 py-1 mt-1"
-            value={verb}
-            onChange={(e) => setVerb(e.target.value)}
-            placeholder="Ej: gestiona, tiene, pertenece a…"
-          />
-        </div>
-      )}
-
-      {/* Owning side */}
-      {needsOwning && (
-        <div className="mt-2">
-          <label className="text-xs text-gray-600">Lado contenedor (diamante)</label>
-          <select className="w-full border rounded-md px-2 py-1 mt-1" value={owning} onChange={(e) => setOwning(e.target.value)}>
-            <option value="A">{a ? nameOf(a) : "A"}</option>
-            <option value="B">{b ? nameOf(b) : "B"}</option>
-          </select>
-        </div>
-      )}
-
-      {/* Dirección */}
-      {needsDirection && (
-        <div className="mt-2">
-          <label className="text-xs text-gray-600">Dirección (flechas)</label>
-          <select className="w-full border rounded-md px-2 py-1 mt-1" value={direction} onChange={(e) => setDirection(e.target.value)}>
-            <option value="A->B">{dirLabelAtoB}</option>
-            <option value="B->A">{dirLabelBtoA}</option>
-            {!isDepend && <option value="BIDI">↔ Bidireccional</option>}
-          </select>
-        </div>
-      )}
-
-      {/* Entidad asociativa */}
+      {/* Entidad asociativa automática para N-M */}
       {isNM && !editing && (
-        <div className="mt-2">
-          <label className="text-xs text-gray-600">Nombre de entidad/tabla intermedia</label>
+        <div className="bg-gradient-to-r from-amber-50 to-yellow-50 p-4 rounded-xl border-2 border-amber-300">
+          <div className="flex items-start gap-2 mb-2">
+            <span className="text-2xl">⚡</span>
+            <div className="flex-1">
+              <div className="text-sm font-bold text-amber-900 mb-1">
+                Relación N-M detectada
+              </div>
+              <div className="text-xs text-amber-800 mb-3">
+                Se creará automáticamente una entidad intermedia con dos relaciones 1-N
+              </div>
+            </div>
+          </div>
+          <label className="block text-xs font-semibold text-amber-900 mb-1">
+            Nombre de entidad intermedia:
+          </label>
           <input
-            className="w-full border rounded-md px-2 py-1 mt-1"
+            className="w-full border-2 border-amber-400 rounded-lg px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
             value={interName}
             onChange={(e) => setInterName(e.target.value)}
             placeholder="Ej: usuario_rol"
@@ -291,40 +368,49 @@ export default function RelacionForm({
         </div>
       )}
 
-      {/* Reglas / errores */}
-      <div className="mt-2 text-sm">
-        {same && <div className="text-red-600">La Entidad A y B deben ser distintas.</div>}
-        {needsMult && decision.error && <div className="text-amber-600">{decision.error}</div>}
-        {editing && isNM && <div className="text-amber-600">No se puede convertir a N–M desde edición. Crea una relación N–M nueva.</div>}
-      </div>
-
-      {/* Botones */}
-      {editing ? (
-        <div className="mt-3 flex gap-2">
-          <button
-            disabled={!canUpdate}
-            onClick={actualizar}
-            className="px-3 py-2 rounded-lg bg-blue-600 text-white font-semibold shadow hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            Actualizar relación
-          </button>
-          <button
-            type="button"
-            onClick={clearForm}
-            className="px-3 py-2 rounded-lg border hover:bg-gray-50"
-          >
-            Cancelar
-          </button>
+      {/* Mensajes de error/advertencia */}
+      {(same || (needsMult && decision.error) || (editing && isNM)) && (
+        <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded-r-lg">
+          <div className="flex items-center gap-2">
+            <span className="text-red-600 text-lg">⚠️</span>
+            <div className="text-sm text-red-800">
+              {same && "Las entidades A y B deben ser distintas."}
+              {needsMult && decision.error && decision.error}
+              {editing && isNM && "No se puede editar relaciones N-M directamente."}
+            </div>
+          </div>
         </div>
-      ) : (
-        <button
-          disabled={!canCreate || same}
-          onClick={crear}
-          className="mt-3 px-3 py-2 rounded-lg bg-blue-600 text-white font-semibold shadow hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          Crear relación
-        </button>
       )}
-    </>
+
+      {/* Botones de acción */}
+      <div className="pt-2">
+        {editing ? (
+          <div className="flex gap-2">
+            <button
+              disabled={!canUpdate}
+              onClick={actualizar}
+              className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold shadow-lg hover:shadow-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02]"
+            >
+              💾 Actualizar relación
+            </button>
+            <button
+              type="button"
+              onClick={clearForm}
+              className="px-4 py-3 rounded-xl border-2 border-gray-300 font-semibold hover:bg-gray-100 transition-all"
+            >
+              ✖️ Cancelar
+            </button>
+          </div>
+        ) : (
+          <button
+            disabled={!canCreate || same}
+            onClick={crear}
+            className="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white font-bold shadow-lg hover:shadow-xl hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02]"
+          >
+            ✨ Crear relación
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

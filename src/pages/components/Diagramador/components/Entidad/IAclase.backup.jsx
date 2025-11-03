@@ -41,9 +41,7 @@ export default function Iaclase({ open, onClose, onSubmit }) {
 
     recognitionRef.current = rec;
     return () => {
-      try { rec.onresult = null; rec.onerror = null; rec.onend = null; rec.stop(); } catch (e) {
-        console.warn("Error cleaning up speech recognition:", e);
-      }
+      try { rec.onresult = null; rec.onerror = null; rec.onend = null; rec.stop(); } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -52,13 +50,7 @@ export default function Iaclase({ open, onClose, onSubmit }) {
 
   const stopListening = () => {
     const rec = recognitionRef.current;
-    if (rec) { 
-      try { 
-        rec.stop(); 
-      } catch (e) {
-        console.warn("Error stopping recognition:", e);
-      }
-    }
+    if (rec) { try { rec.stop(); } catch {} }
     setListening(false);
     setInterim("");
   };

@@ -277,10 +277,51 @@ export async function getDeltaFromUserText({ text, promptBuilder, currentModel }
     }
   }
 
-  // 3) Parser local
+  // 3) Parser local con templates
   const naive = naiveParse(text);
   return { actions: naive };
 }
+
+/* ===================== TEMPLATES DE SISTEMAS COMPLETOS ===================== */
+const SYSTEM_TEMPLATES = {
+  ventas: [
+    // Primero todas las entidades
+    {op:"add_entity",name:"Usuario",attrs:[{name:"id",type:"Integer"},{name:"username",type:"String"},{name:"password",type:"String"},{name:"email",type:"String"},{name:"rol",type:"String"},{name:"telefono",type:"String"},{name:"activo",type:"Boolean"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"Cliente",attrs:[{name:"id",type:"Integer"},{name:"nombre",type:"String"},{name:"apellido",type:"String"},{name:"email",type:"String"},{name:"telefono",type:"String"},{name:"direccion",type:"String"},{name:"ciudad",type:"String"},{name:"nit",type:"String"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"Categoria",attrs:[{name:"id",type:"Integer"},{name:"nombre",type:"String"},{name:"descripcion",type:"String"},{name:"activo",type:"Boolean"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"Producto",attrs:[{name:"id",type:"Integer"},{name:"nombre",type:"String"},{name:"descripcion",type:"String"},{name:"precio",type:"BigDecimal"},{name:"stock",type:"Integer"},{name:"stockMinimo",type:"Integer"},{name:"categoriaId",type:"Integer"},{name:"activo",type:"Boolean"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"Venta",attrs:[{name:"id",type:"Integer"},{name:"numeroFactura",type:"String"},{name:"fecha",type:"Date"},{name:"total",type:"BigDecimal"},{name:"descuento",type:"BigDecimal"},{name:"subtotal",type:"BigDecimal"},{name:"clienteId",type:"Integer"},{name:"usuarioId",type:"Integer"},{name:"metodoPago",type:"String"},{name:"estado",type:"String"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"DetalleVenta",attrs:[{name:"id",type:"Integer"},{name:"cantidad",type:"Integer"},{name:"precioUnitario",type:"BigDecimal"},{name:"subtotal",type:"BigDecimal"},{name:"descuento",type:"BigDecimal"},{name:"total",type:"BigDecimal"},{name:"ventaId",type:"Integer"},{name:"productoId",type:"Integer"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    // Luego todas las relaciones (muchos a uno)
+    {op:"add_relation",a:"Producto",b:"Categoria",mA:"*",mB:"1",relKind:"ASSOC",verb:"pertenece a",relType:"N-1",direction:"a->b"},
+    {op:"add_relation",a:"Venta",b:"Cliente",mA:"*",mB:"1",relKind:"ASSOC",verb:"realizada por",relType:"N-1",direction:"a->b"},
+    {op:"add_relation",a:"Venta",b:"Usuario",mA:"*",mB:"1",relKind:"ASSOC",verb:"registrada por",relType:"N-1",direction:"a->b"},
+    {op:"add_relation",a:"DetalleVenta",b:"Venta",mA:"*",mB:"1",relKind:"COMP",verb:"detalle de",relType:"N-1",direction:"a->b"},
+    {op:"add_relation",a:"DetalleVenta",b:"Producto",mA:"*",mB:"1",relKind:"ASSOC",verb:"contiene",relType:"N-1",direction:"a->b"}
+  ],
+  biblioteca: [
+    {op:"add_entity",name:"Usuario",attrs:[{name:"id",type:"Integer"},{name:"nombre",type:"String"},{name:"apellido",type:"String"},{name:"email",type:"String"},{name:"telefono",type:"String"},{name:"direccion",type:"String"},{name:"tipoUsuario",type:"String"},{name:"activo",type:"Boolean"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"Autor",attrs:[{name:"id",type:"Integer"},{name:"nombre",type:"String"},{name:"apellido",type:"String"},{name:"nacionalidad",type:"String"},{name:"biografia",type:"String"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"Editorial",attrs:[{name:"id",type:"Integer"},{name:"nombre",type:"String"},{name:"pais",type:"String"},{name:"email",type:"String"},{name:"telefono",type:"String"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"Libro",attrs:[{name:"id",type:"Integer"},{name:"titulo",type:"String"},{name:"isbn",type:"String"},{name:"anioPublicacion",type:"Integer"},{name:"numPaginas",type:"Integer"},{name:"idioma",type:"String"},{name:"stock",type:"Integer"},{name:"autorId",type:"Integer"},{name:"editorialId",type:"Integer"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"Prestamo",attrs:[{name:"id",type:"Integer"},{name:"fechaPrestamo",type:"Date"},{name:"fechaDevolucion",type:"Date"},{name:"fechaDevolucionReal",type:"Date"},{name:"estado",type:"String"},{name:"multa",type:"BigDecimal"},{name:"usuarioId",type:"Integer"},{name:"libroId",type:"Integer"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_relation",a:"Libro",b:"Autor",mA:"*",mB:"1",relKind:"ASSOC",verb:"escrito por",relType:"N-1",direction:"a->b"},
+    {op:"add_relation",a:"Libro",b:"Editorial",mA:"*",mB:"1",relKind:"ASSOC",verb:"publicado por",relType:"N-1",direction:"a->b"},
+    {op:"add_relation",a:"Prestamo",b:"Usuario",mA:"*",mB:"1",relKind:"ASSOC",verb:"solicitado por",relType:"N-1",direction:"a->b"},
+    {op:"add_relation",a:"Prestamo",b:"Libro",mA:"*",mB:"1",relKind:"ASSOC",verb:"préstamo de",relType:"N-1",direction:"a->b"}
+  ],
+  hospital: [
+    {op:"add_entity",name:"Paciente",attrs:[{name:"id",type:"Integer"},{name:"nombre",type:"String"},{name:"apellido",type:"String"},{name:"fechaNacimiento",type:"Date"},{name:"genero",type:"String"},{name:"direccion",type:"String"},{name:"telefono",type:"String"},{name:"email",type:"String"},{name:"grupoSanguineo",type:"String"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"Doctor",attrs:[{name:"id",type:"Integer"},{name:"nombre",type:"String"},{name:"apellido",type:"String"},{name:"especialidad",type:"String"},{name:"licencia",type:"String"},{name:"telefono",type:"String"},{name:"email",type:"String"},{name:"activo",type:"Boolean"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"Cita",attrs:[{name:"id",type:"Integer"},{name:"fecha",type:"Date"},{name:"hora",type:"String"},{name:"motivo",type:"String"},{name:"estado",type:"String"},{name:"pacienteId",type:"Integer"},{name:"doctorId",type:"Integer"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_entity",name:"HistorialMedico",attrs:[{name:"id",type:"Integer"},{name:"fecha",type:"Date"},{name:"diagnostico",type:"String"},{name:"tratamiento",type:"String"},{name:"observaciones",type:"String"},{name:"pacienteId",type:"Integer"},{name:"doctorId",type:"Integer"},{name:"citaId",type:"Integer"},{name:"createdAt",type:"Date"},{name:"updatedAt",type:"Date"}]},
+    {op:"add_relation",a:"Cita",b:"Paciente",mA:"*",mB:"1",relKind:"ASSOC",verb:"agendada para",relType:"N-1",direction:"a->b"},
+    {op:"add_relation",a:"Cita",b:"Doctor",mA:"*",mB:"1",relKind:"ASSOC",verb:"atendida por",relType:"N-1",direction:"a->b"},
+    {op:"add_relation",a:"HistorialMedico",b:"Paciente",mA:"*",mB:"1",relKind:"ASSOC",verb:"historial de",relType:"N-1",direction:"a->b"},
+    {op:"add_relation",a:"HistorialMedico",b:"Doctor",mA:"*",mB:"1",relKind:"ASSOC",verb:"registrado por",relType:"N-1",direction:"a->b"},
+    {op:"add_relation",a:"HistorialMedico",b:"Cita",mA:"*",mB:"0..1",relKind:"ASSOC",verb:"derivado de",relType:"N-1",direction:"a->b"}
+  ]
+};
 
 /* ===================== Parser local EXTENDIDO =====================
 
@@ -305,6 +346,18 @@ function naiveParse(textRaw) {
   const T = (s) => (s || "").trim();
   const SRC = textRaw || "";
   const actions = [];
+  
+  // Detectar templates de sistemas completos
+  const lowerText = SRC.toLowerCase();
+  if (/sistema\s+de\s+ventas?|ventas?|punto\s+de\s+venta|pos/i.test(lowerText)) {
+    return SYSTEM_TEMPLATES.ventas;
+  }
+  if (/biblioteca|libros?|prestamos?/i.test(lowerText)) {
+    return SYSTEM_TEMPLATES.biblioteca;
+  }
+  if (/hospital|clinica|medico|pacientes?|citas?/i.test(lowerText)) {
+    return SYSTEM_TEMPLATES.hospital;
+  }
 
   // Upsert entidad con atributos
   const reUpsertEntity = /(?:crea(?:r)?|define|actualiza|modifica)\s+entidad\s+([A-Za-z_]\w*)\s*\(([^)]*)\)/gi;

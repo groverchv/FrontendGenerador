@@ -42,8 +42,9 @@ export default function RelacionarPanel({
   }, []);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="p-3 border border-gray-200 rounded-xl">
+    <div className="flex flex-col gap-4">
+      {/* Sección de creación/edición de relación */}
+      <div className="bg-gradient-to-br from-white to-blue-50 p-4 rounded-2xl border-2 border-blue-200 shadow-sm">
         <RelacionForm
           options={options}
           editing={editing}
@@ -56,7 +57,8 @@ export default function RelacionarPanel({
         />
       </div>
 
-      <div className="p-3 border border-gray-200 rounded-xl">
+      {/* Sección de historial */}
+      <div className="bg-gradient-to-br from-white to-gray-50 p-4 rounded-2xl border-2 border-gray-200 shadow-sm">
         <RelacionHistorial
           edges={edges}
           options={options}

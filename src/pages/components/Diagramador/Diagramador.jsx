@@ -1,6 +1,5 @@
 import {
   forwardRef,
-  useCallback,
   useMemo,
   useState,
   useImperativeHandle,
@@ -21,14 +20,17 @@ import usePersistenciaYArchivo from "./SubDiagrama/usePersistenciaYArchivo";
 import useIA from "./SubDiagrama/useIA";
 import useGeneracionCodigo from "./SubDiagrama/useGeneracionCodigo";
 
+// Utils
+import { findBestHandle, updateNodesWithHandleUsage } from "./SubDiagrama/utils";
+
+// Tipos para ReactFlow - definidos fuera del componente para evitar warnings
+const nodeTypes = { classNode: NodoClase };
+const edgeTypes = { uml: AristaUML };
+
 const Diagramador = forwardRef(function Diagramador(
-  { projectId, projectName, diagramId, sock },
+  { projectId, projectName, sock },
   ref
 ) {
-  // Tipos para ReactFlow
-  const nodeTypes = useMemo(() => ({ classNode: NodoClase }), []);
-  const edgeTypes = useMemo(() => ({ uml: AristaUML }), []);
-
   // Estado base
   const [nodes, setNodes, rfOnNodesChange] = useNodesState([]);
   const [edges, setEdges, rfOnEdgesChange] = useEdgesState([]);
@@ -103,11 +105,11 @@ const Diagramador = forwardRef(function Diagramador(
     [nodes, selectedId]
   );
 
-  // Pequeño “jitter” para no encimar varias creaciones seguidas en el mismo punto
+  // Pequeño "jitter" para no encimar varias creaciones seguidas en el mismo punto
   const jitter = (n) => (n % 4) * 24;
 
   return (
-    <div className="w-full h-[calc(100vh-56px)] md:grid md:grid-cols-[1fr_340px] overflow-hidden">
+    <div className="w-full h-[calc(100vh-56px)] md:grid md:grid-cols-[1fr_420px] overflow-hidden">
       {/* Lienzo */}
       <LienzoDeDiagrama
         nodes={nodes}
@@ -208,11 +210,18 @@ const Diagramador = forwardRef(function Diagramador(
         // Relaciones
         onRelacionSimple={({ sourceId, targetId, tipo, mA, mB, verb, meta }) => {
           const id = "e" + Date.now();
+          
+          // Encuentra el mejor handle disponible para source y target
+          const sourceHandle = findBestHandle(sourceId, edges, true);
+          const targetHandle = findBestHandle(targetId, edges, false);
+          
           setEdges((es) =>
             es.concat({
               id,
               source: sourceId,
               target: targetId,
+              sourceHandle,
+              targetHandle,
               type: "uml",
               label: verb,
               data: {
@@ -224,12 +233,95 @@ const Diagramador = forwardRef(function Diagramador(
               },
             })
           );
+          
+          // Actualiza el uso de handles en los nodos
+          setNodes((ns) => updateNodesWithHandleUsage(ns, [...edges, {
+            source: sourceId,
+            target: targetId,
+            sourceHandle,
+            targetHandle,
+          }]));
+          
           scheduleSnapshot();
         }}
         onRelacionNM={({ aId, bId, nombreIntermedia }) => {
-          alert(
-            "Usa el hook useIA.addRelationNM o crea manualmente la entidad intermedia.\n(El generador de código la soporta automáticamente)."
+          // Crear entidad intermedia
+          const intermediaId = String(Date.now());
+          const nodeA = nodes.find(n => n.id === aId);
+          const nodeB = nodes.find(n => n.id === bId);
+          
+          if (!nodeA || !nodeB) return;
+          
+          // Posición de la entidad intermedia (punto medio entre A y B)
+          const midX = (nodeA.position.x + nodeB.position.x) / 2;
+          const midY = (nodeA.position.y + nodeB.position.y) / 2;
+          
+          // Crear la entidad intermedia
+          setNodes((ns) =>
+            ns.concat({
+              id: intermediaId,
+              type: "classNode",
+              position: { x: midX, y: midY },
+              data: { 
+                label: nombreIntermedia || `${nodeA.data.label}_${nodeB.data.label}`,
+                attrs: [],
+                usage: {
+                  target: { tl: 0, l1: 0, l2: 0, bl: 0, t1: 0, t2: 0, t3: 0, t4: 0, tr: 0, r1: 0, r2: 0, br: 0 },
+                  source: { tl2: 0, l3: 0, l4: 0, bl2: 0, b1: 0, b2: 0, b3: 0, b4: 0, tr2: 0, r3: 0, r4: 0, br2: 0 }
+                }
+              },
+            })
           );
+          
+          // Crear primera relación: A -> Intermedia (1-N)
+          const edge1Id = "e" + Date.now();
+          const sourceHandle1 = findBestHandle(aId, edges, true);
+          const targetHandle1 = findBestHandle(intermediaId, [], false);
+          
+          const edge1 = {
+            id: edge1Id,
+            source: aId,
+            target: intermediaId,
+            sourceHandle: sourceHandle1,
+            targetHandle: targetHandle1,
+            type: "uml",
+            data: {
+              mA: "1",
+              mB: "*",
+              relType: "1-N",
+              relKind: "ASSOC",
+              direction: "NONE",
+            },
+          };
+          
+          // Crear segunda relación: B -> Intermedia (1-N)
+          const edge2Id = "e" + (Date.now() + 1);
+          const sourceHandle2 = findBestHandle(bId, edges, true);
+          const targetHandle2 = findBestHandle(intermediaId, [edge1], false);
+          
+          const edge2 = {
+            id: edge2Id,
+            source: bId,
+            target: intermediaId,
+            sourceHandle: sourceHandle2,
+            targetHandle: targetHandle2,
+            type: "uml",
+            data: {
+              mA: "1",
+              mB: "*",
+              relType: "1-N",
+              relKind: "ASSOC",
+              direction: "NONE",
+            },
+          };
+          
+          // Agregar ambas aristas
+          setEdges((es) => es.concat([edge1, edge2]));
+          
+          // Actualizar el uso de handles en TODOS los nodos
+          setNodes((ns) => updateNodesWithHandleUsage(ns, [...edges, edge1, edge2]));
+          
+          scheduleSnapshot();
         }}
         onUpdateEdge={(edgeId, partial) => {
           setEdges((es) =>
@@ -243,6 +335,11 @@ const Diagramador = forwardRef(function Diagramador(
         }}
         onDeleteEdge={(edgeId) => {
           setEdges((es) => es.filter((e) => e.id !== edgeId));
+          
+          // Actualiza el uso de handles después de eliminar
+          const remainingEdges = edges.filter((e) => e.id !== edgeId);
+          setNodes((ns) => updateNodesWithHandleUsage(ns, remainingEdges));
+          
           scheduleSnapshot();
         }}
       />
