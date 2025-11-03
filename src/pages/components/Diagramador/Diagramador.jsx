@@ -19,6 +19,7 @@ import useColaboracion from "./SubDiagrama/useColaboracion";
 import usePersistenciaYArchivo from "./SubDiagrama/usePersistenciaYArchivo";
 import useIA from "./SubDiagrama/useIA";
 import useGeneracionCodigo from "./SubDiagrama/useGeneracionCodigo";
+import Spinner from "../../../components/Spinner";
 
 // Utils
 import { findBestHandle, updateNodesWithHandleUsage } from "./SubDiagrama/utils";
@@ -62,7 +63,7 @@ const Diagramador = forwardRef(function Diagramador(
 
   // Persistencia + import/export
   const versionRef = useRef(null);
-  const { persistNow, exportJSON, exportPUML, importFromJSONText, importFromPUMLText } =
+  const { loading, saving, persistNow, exportJSON, exportPUML, importFromJSONText, importFromPUMLText } =
     usePersistenciaYArchivo({
       projectId,
       projectName,
@@ -109,7 +110,12 @@ const Diagramador = forwardRef(function Diagramador(
   const jitter = (n) => (n % 4) * 24;
 
   return (
-    <div className="w-full h-[calc(100vh-56px)] md:grid md:grid-cols-[1fr_420px] overflow-hidden">
+    <div className="w-full h-[calc(100vh-56px)] md:grid md:grid-cols-[1fr_420px] overflow-hidden relative">
+      {(loading || saving) && (
+        <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] flex items-center justify-center z-50">
+          <Spinner label={loading ? "Cargando diagrama..." : "Guardando cambios..."} />
+        </div>
+      )}
       {/* Lienzo */}
       <LienzoDeDiagrama
         nodes={nodes}

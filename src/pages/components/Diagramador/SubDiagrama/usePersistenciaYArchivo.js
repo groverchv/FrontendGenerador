@@ -1,7 +1,9 @@
 // src/views/proyectos/Diagramador/SubDiagrama/usePersistenciaYArchivo.js
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { ProjectsApi } from "../../../../api/projects";
+import { DiagramsApi } from "../../../../api/diagrams";
 import { downloadText, normalizeMult, decideRelType } from "./utils";
+import { useToast } from "../../../../hooks/useToast";
 
 /**
  * Carga/guarda en API y maneja export/import JSON/PUML.
@@ -17,25 +19,39 @@ export default function usePersistenciaYArchivo({
   publishSnapshot,
   versionRef,
 }) {
+  const toast = useToast();
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   // -------- CARGA INICIAL
   useEffect(() => {
     if (!projectId) return;
     (async () => {
       try {
+        setLoading(true);
         const d = await ProjectsApi.getDiagram(projectId);
         setNodes(d.nodes ? JSON.parse(d.nodes) : []);
         setEdges(d.edges ? JSON.parse(d.edges) : []);
         versionRef.current = d.version ?? null;
       } catch (err) {
         console.error("No se pudo cargar el diagrama", err);
+        toast.error("No se pudo cargar el diagrama. Revisa tu conexión.");
+      } finally {
+        setLoading(false);
       }
     })();
-  }, [projectId, setNodes, setEdges, versionRef]);
+  }, [projectId, setNodes, setEdges, versionRef, toast]);
 
   // -------- GUARDAR
   const persistNow = useCallback(async () => {
     try {
       if (!projectId) return;
+      // Validación previa básica
+      const v = DiagramsApi.validate(nodes, edges);
+      if (!v.valid) {
+        toast.error("No se puede guardar: " + v.errors.join(". "));
+        return;
+      }
+      setSaving(true);
       await ProjectsApi.updateDiagram(projectId, {
         name: "Principal",
         nodes: JSON.stringify(nodes),
@@ -43,12 +59,14 @@ export default function usePersistenciaYArchivo({
         viewport: null,
       });
       publishSnapshot?.();
-      alert("✅ Diagrama guardado correctamente.");
+      toast.success("Diagrama guardado correctamente.");
     } catch (e) {
       console.error("Error guardando", e);
-      alert("❌ Error guardando cambios en el diagrama.");
+      toast.error("Error guardando cambios en el diagrama.");
+    } finally {
+      setSaving(false);
     }
-  }, [projectId, nodes, edges, publishSnapshot]);
+  }, [projectId, nodes, edges, publishSnapshot, toast]);
 
   // -------- EXPORTS
   const exportJSON = useCallback(() => {
@@ -203,12 +221,12 @@ ${rels}
         viewport: null,
       });
       publishSnapshot?.();
-      alert("✅ PUML importado y guardado.");
+      toast.success("PUML importado y guardado.");
     } catch (err) {
       console.error("Import PUML error:", err);
-      alert("❌ No se pudo importar el .puml: " + (err?.message || "desconocido"));
+      toast.error("No se pudo importar el .puml: " + (err?.message || "desconocido"));
     }
-  }, [projectId, setNodes, setEdges, publishSnapshot]);
+  }, [projectId, setNodes, setEdges, publishSnapshot, toast]);
 
   const importFromJSONText = useCallback(async (text) => {
     try {
@@ -226,15 +244,17 @@ ${rels}
         viewport: null,
       });
       publishSnapshot?.();
-      alert("✅ Diagrama importado y guardado.");
+      toast.success("Diagrama importado y guardado.");
     } catch (err) {
       console.error("Import JSON error:", err);
-      alert("❌ No se pudo importar el JSON: " + (err?.message || "desconocido"));
+      toast.error("No se pudo importar el JSON: " + (err?.message || "desconocido"));
     }
-  }, [projectId, setNodes, setEdges, publishSnapshot, versionRef]);
+  }, [projectId, setNodes, setEdges, publishSnapshot, versionRef, toast]);
 
   return {
     versionRef,
+    loading,
+    saving,
     persistNow,
     exportJSON,
     exportPUML,

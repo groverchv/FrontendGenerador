@@ -5,6 +5,7 @@ import { ProjectsApi } from "../../../api/projects";
 import { Sockend } from "../../../api/socket"; // SockJS + STOMP
 import Diagramador from "../Diagramador/Diagramador";
 import ProjectNavbar from "./ProjectNavbar";
+import { useToast } from "../../../hooks/useToast";
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -18,6 +19,7 @@ export default function ProjectDetail() {
 
   const diagramadorRef = useRef();
   const presenceSubRef = useRef(null);
+  const toast = useToast();
 
   // Input para importar
   const fileRef = useRef(null);
@@ -43,7 +45,7 @@ export default function ProjectDetail() {
     } else if (name.endsWith(".json")) {
       await diagramadorRef.current?.importFromJSONText(text);
     } else {
-      alert("Formato no soportado. Usa .puml/.uml o .json exportados por la app.");
+      toast.error("Formato no soportado. Usa .puml/.uml o .json exportados por la app.");
     }
     e.target.value = ""; // permite re-seleccionar el mismo archivo
   };
@@ -88,7 +90,7 @@ export default function ProjectDetail() {
         const off = s.onConnect(() => enter());
 
         return () => {
-          try { off?.(); } catch {}
+          try { off?.(); } catch { /* ignore */ }
         };
       } catch (err) {
         console.error("WS connect error:", err);
@@ -97,9 +99,9 @@ export default function ProjectDetail() {
 
     return () => {
       active = false;
-      try { s.send(`/app/projects/${id}/presence.leave`, ""); } catch {}
-      try { if (presenceSubRef.current) s.unsubscribe(presenceSubRef.current); } catch {}
-      try { s.close(); } catch {}
+  try { s.send(`/app/projects/${id}/presence.leave`, ""); } catch { /* ignore */ }
+  try { if (presenceSubRef.current) s.unsubscribe(presenceSubRef.current); } catch { /* ignore */ }
+  try { s.close(); } catch { /* ignore */ }
     };
   }, [id]);
 
