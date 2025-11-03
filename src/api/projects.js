@@ -1,17 +1,84 @@
 import api from "./api";
 
 export const ProjectsApi = {
-  list: () => api.get("/api/projects").then(r => r.data),
-  get:  (id) => api.get(`/api/projects/${id}`).then(r => r.data),
-  create: (body) => api.post("/api/projects", body).then(r => r.data),
-  update: (id, body) => api.put(`/api/projects/${id}`, body).then(r => r.data),
-  remove: (id) => api.delete(`/api/projects/${id}`),
+  // Listar todos los proyectos
+  list: async () => {
+    try {
+      const response = await api.get("/api/projects");
+      return response.data;
+    } catch (error) {
+      console.error("[ProjectsApi] Error listando proyectos:", error.userMessage);
+      throw error;
+    }
+  },
 
-  // 1–1: obtener el único diagrama del proyecto
-  getDiagram: (projectId) =>
-    api.get(`/api/projects/${projectId}/diagram`).then(r => r.data),
+  // Obtener un proyecto por ID
+  get: async (id) => {
+    try {
+      const response = await api.get(`/api/projects/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error(`[ProjectsApi] Error obteniendo proyecto ${id}:`, error.userMessage);
+      throw error;
+    }
+  },
 
-  // 🔹 NUEVO: actualizar diagrama
-  updateDiagram: (projectId, body) =>
-    api.put(`/api/projects/${projectId}/diagram`, body).then(r => r.data),
+  // Crear nuevo proyecto
+  create: async (body) => {
+    try {
+      const response = await api.post("/api/projects", body);
+      return response.data;
+    } catch (error) {
+      console.error("[ProjectsApi] Error creando proyecto:", error.userMessage);
+      throw error;
+    }
+  },
+
+  // Actualizar proyecto existente
+  update: async (id, body) => {
+    try {
+      const response = await api.put(`/api/projects/${id}`, body);
+      return response.data;
+    } catch (error) {
+      console.error(`[ProjectsApi] Error actualizando proyecto ${id}:`, error.userMessage);
+      throw error;
+    }
+  },
+
+  // Eliminar proyecto
+  remove: async (id) => {
+    try {
+      await api.delete(`/api/projects/${id}`);
+    } catch (error) {
+      console.error(`[ProjectsApi] Error eliminando proyecto ${id}:`, error.userMessage);
+      throw error;
+    }
+  },
+
+  // Obtener diagrama del proyecto (relación 1-1)
+  getDiagram: async (projectId) => {
+    try {
+      const response = await api.get(`/api/projects/${projectId}/diagram`);
+      return response.data;
+    } catch (error) {
+      // Si es 404, devolver diagrama vacío en lugar de fallar
+      if (error.response?.status === 404) {
+        console.warn(`[ProjectsApi] Diagrama no encontrado para proyecto ${projectId}, creando vacío`);
+        return { nodes: "[]", edges: "[]", version: 1 };
+      }
+      console.error(`[ProjectsApi] Error obteniendo diagrama del proyecto ${projectId}:`, error.userMessage);
+      throw error;
+    }
+  },
+
+  // Actualizar diagrama del proyecto
+  updateDiagram: async (projectId, body) => {
+    try {
+      const response = await api.put(`/api/projects/${projectId}/diagram`, body);
+      return response.data;
+    } catch (error) {
+      console.error(`[ProjectsApi] Error actualizando diagrama del proyecto ${projectId}:`, error.userMessage);
+      throw error;
+    }
+  },
 };
