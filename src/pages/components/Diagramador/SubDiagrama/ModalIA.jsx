@@ -1,6 +1,6 @@
 // src/views/proyectos/Diagramador/SubDiagrama/ModallA.jsx
 import React from "react";
-import Iaclase from "../components/iaclase";
+import Iaclase from "../components/Entidad/iaclase";
 
 /**
  * ModallA

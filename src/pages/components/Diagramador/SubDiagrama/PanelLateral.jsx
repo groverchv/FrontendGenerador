@@ -1,8 +1,8 @@
 // src/views/proyectos/Diagramador/SubDiagrama/PanelLateral.jsx
 import React from "react";
 import Sidebar from "../sidebar/sidebar";                // ya existente
-import EntidadPanel from "../components/entidad";       // ya existente
-import RelacionarPanel from "../components/relacionar"; // ya existente"
+import EntidadPanel from "../components/Entidad/entidad";       // ya existente
+import RelacionarPanel from "../components/Relacion/relacionar"; // ya existente"
 
 /**
  * PanelLateral
