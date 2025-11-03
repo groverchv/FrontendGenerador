@@ -1,12 +1,12 @@
+// src/views/proyectos/Diagramador/SubDiagrama/components/Relacion/RelacionHistorial.jsx
 import React from "react";
 
 export default function RelacionHistorial({
   edges = [],
   options = [],
-  onEdit,         // (edge)
-  onDelete,       // (edgeId)
-  onUpdateEdge,   // (edgeId, partial)
-  onOpenIA,       // (payload)
+  onEdit,
+  onDelete,
+  onUpdateEdge,
 }) {
   const nameOf = (id) => options.find((o) => o.id === id)?.name || id;
   const norm = (v) => (v === "N" ? "*" : v === "0..N" ? "0..*" : v || "1");
@@ -28,53 +28,21 @@ export default function RelacionHistorial({
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="font-semibold">
-                    {nameOf(e.source)}{" "}
-                    <span className="text-gray-700">{norm(e.data?.mA)}</span>{" "}
-                    →{" "}
-                    <span className="text-gray-700">{norm(e.data?.mB)}</span>{" "}
-                    {nameOf(e.target)}
+                    {nameOf(e.source)} <span className="text-gray-700">{norm(e.data?.mA)}</span> →{" "}
+                    <span className="text-gray-700">{norm(e.data?.mB)}</span> {nameOf(e.target)}
                   </div>
                   <div className="text-xs text-gray-600">
                     Tipo: <b>{relKindLabel(e.data?.relKind || "ASSOC")}</b>{" "}
                     {e.data?.direction && (
-                      <span className="ml-1">
-                        · Dirección: <code>{e.data.direction}</code>
-                      </span>
+                      <span className="ml-1">· Dirección: <code>{e.data.direction}</code></span>
                     )}
                     {e.data?.owning && (
-                      <span className="ml-1">
-                        · Lado contenedor:{" "}
-                        <b>{e.data.owning === "A" ? nameOf(e.source) : nameOf(e.target)}</b>
-                      </span>
+                      <span className="ml-1">· Lado contenedor: <b>{e.data.owning === "A" ? nameOf(e.source) : nameOf(e.target)}</b></span>
                     )}
                   </div>
                 </div>
 
-                {onOpenIA && (
-                  <button
-                    onClick={() =>
-                      onOpenIA({
-                        scope: "relation-edit",
-                        edgeId: e.id,
-                        current: {
-                          aName: nameOf(e.source),
-                          bName: nameOf(e.target),
-                          mA: norm(e.data?.mA || "1"),
-                          mB: norm(e.data?.mB || "1"),
-                          verb: e.data?.verb || "",
-                          relType: e.data?.relType || "",
-                          relKind: e.data?.relKind || "ASSOC",
-                          owning: e.data?.owning || "A",
-                          direction: e.data?.direction || "A->B",
-                        },
-                      })
-                    }
-                    className="px-2 py-1 rounded-md border bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-sm"
-                    title="Sugerencias IA para esta relación"
-                  >
-                    IA
-                  </button>
-                )}
+                {/* 🔕 Sin botón IA por relación */}
               </div>
 
               <div className="mt-2">
@@ -94,10 +62,7 @@ export default function RelacionHistorial({
               </div>
 
               <div className="mt-2 flex justify-end gap-2">
-                <button
-                  className="px-3 py-1 rounded-md border text-sm hover:bg-gray-50"
-                  onClick={() => onEdit?.(e)}
-                >
+                <button className="px-3 py-1 rounded-md border text-sm hover:bg-gray-50" onClick={() => onEdit?.(e)}>
                   Editar
                 </button>
                 <button
