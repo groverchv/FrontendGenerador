@@ -4,7 +4,7 @@
 //   y DES-ESCAPA correctamente (sin duplicar backslashes) para que no queden \n literales.
 // - Parser local extendido: CRUD de entidades/atributos + 5 tipos de relación + clear_attrs/only id.
 
-const EMBEDDED_FALLBACK_KEY = "AIzaSyBGBFvsYUMQAkbWFdZ4eEVHrpyboKxA0xw";
+const EMBEDDED_FALLBACK_KEY = "AIzaSyDRGJ3UXInnuy1Yu3OEw5Y6uMqeBMWLl3M";
 let RUNTIME_API_KEY = "";
 let RUNTIME_MODEL  = "";
 
