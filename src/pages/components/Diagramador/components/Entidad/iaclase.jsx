@@ -13,15 +13,8 @@ export default function Iaclase({ open, onClose, onSubmit }) {
 
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-<<<<<<< HEAD
-    if (!SR) {
-      setSupported(false);
-      return;
-    }
-=======
-    if (!SR) { setSupported(false); return; }
->>>>>>> trabajo-temporal
-    setSupported(true);
+if (!SR) { setSupported(false); return; }
+setSupported(true);
 
     const rec = new SR();
     rec.lang = LANG;
@@ -43,26 +36,7 @@ export default function Iaclase({ open, onClose, onSubmit }) {
       setInterim(interimChunk);
     };
 
-<<<<<<< HEAD
-    rec.onerror = (e) => {
-      setErrorMsg(e.error || "Error de reconocimiento de voz.");
-      setListening(false);
-    };
-    rec.onend = () => {
-      setListening(false);
-      setInterim("");
-    };
-
-    recognitionRef.current = rec;
-    return () => {
-      try {
-        rec.onresult = null;
-        rec.onerror = null;
-        rec.onend = null;
-        rec.stop();
-      } catch {}
-=======
-    rec.onerror = (e) => { setErrorMsg(e.error || "Error de reconocimiento de voz."); setListening(false); };
+rec.onerror = (e) => { setErrorMsg(e.error || "Error de reconocimiento de voz."); setListening(false); };
     rec.onend = () => { setListening(false); setInterim(""); };
 
     recognitionRef.current = rec;
@@ -70,8 +44,7 @@ export default function Iaclase({ open, onClose, onSubmit }) {
       try { rec.onresult = null; rec.onerror = null; rec.onend = null; rec.stop(); } catch (e) {
         console.warn("Error cleaning up speech recognition:", e);
       }
->>>>>>> trabajo-temporal
-    };
+};
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -79,20 +52,13 @@ export default function Iaclase({ open, onClose, onSubmit }) {
 
   const stopListening = () => {
     const rec = recognitionRef.current;
-<<<<<<< HEAD
-    if (rec) {
-      try {
-        rec.stop();
-      } catch {}
-=======
-    if (rec) { 
+if (rec) { 
       try { 
         rec.stop(); 
       } catch (e) {
         console.warn("Error stopping recognition:", e);
       }
->>>>>>> trabajo-temporal
-    }
+}
     setListening(false);
     setInterim("");
   };
@@ -105,19 +71,9 @@ export default function Iaclase({ open, onClose, onSubmit }) {
     if (listening) {
       stopListening();
     } else {
-<<<<<<< HEAD
-      try {
-        setListening(true);
-        rec.start();
-      } catch (err) {
-        setListening(false);
-        setErrorMsg("No se pudo iniciar el micrófono. " + (err?.message || ""));
-      }
-=======
-      try { setListening(true); rec.start(); }
+try { setListening(true); rec.start(); }
       catch (err) { setListening(false); setErrorMsg("No se pudo iniciar el micrófono. " + (err?.message || "")); }
->>>>>>> trabajo-temporal
-    }
+}
   };
 
   const handleSubmit = async () => {
@@ -128,18 +84,9 @@ export default function Iaclase({ open, onClose, onSubmit }) {
     setErrorMsg("");
     try {
       const result = await Promise.resolve(onSubmit?.(payload));
-<<<<<<< HEAD
-      if (result === false) {
-        setErrorMsg("No se pudo generar con IA.");
-        return;
-      }
-      setText("");
-      setInterim("");
-=======
-      if (result === false) { setErrorMsg("No se pudo generar con IA."); return; }
+if (result === false) { setErrorMsg("No se pudo generar con IA."); return; }
       setText(""); setInterim("");
->>>>>>> trabajo-temporal
-    } catch (err) {
+} catch (err) {
       setErrorMsg(err?.message || "Error al generar con IA.");
     } finally {
       setIsSubmitting(false);
@@ -150,22 +97,9 @@ export default function Iaclase({ open, onClose, onSubmit }) {
     <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center">
       <div className="bg-white w-[720px] max-w-[95vw] rounded-xl shadow-xl p-4">
         <div className="flex items-center justify-between mb-3">
-<<<<<<< HEAD
-          <h3 className="text-lg font-semibold">
-            Generar/Completar diagrama con IA
-          </h3>
-          <button
-            onClick={onClose}
-            className="px-2 py-1 rounded-md border hover:bg-gray-50"
-            disabled={isSubmitting}
-          >
-            ✕
-          </button>
-=======
-          <h3 className="text-lg font-semibold">Generar/Completar diagrama con IA</h3>
+<h3 className="text-lg font-semibold">Generar/Completar diagrama con IA</h3>
           <button onClick={onClose} className="px-2 py-1 rounded-md border hover:bg-gray-50" disabled={isSubmitting}>✕</button>
->>>>>>> trabajo-temporal
-        </div>
+</div>
 
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2">
@@ -173,43 +107,16 @@ export default function Iaclase({ open, onClose, onSubmit }) {
               onClick={toggleListening}
               disabled={!supported || isSubmitting}
               className={`px-3 py-1.5 rounded-md border font-medium transition
-<<<<<<< HEAD
-                ${
-                  listening
-                    ? "bg-red-50 border-red-300 text-red-700"
-                    : "hover:bg-gray-50"
-                }
-                ${
-                  !supported || isSubmitting
-                    ? "opacity-60 cursor-not-allowed"
-                    : ""
-                }`}
-              title={
-                supported
-                  ? listening
-                    ? "Detener dictado"
-                    : "Empezar dictado"
-                  : "Web Speech API no soportada"
-              }
-=======
-                ${listening ? "bg-red-50 border-red-300 text-red-700" : "hover:bg-gray-50"}
+${listening ? "bg-red-50 border-red-300 text-red-700" : "hover:bg-gray-50"}
                 ${!supported || isSubmitting ? "opacity-60 cursor-not-allowed" : ""}`}
               title={supported ? (listening ? "Detener dictado" : "Empezar dictado") : "Web Speech API no soportada"}
->>>>>>> trabajo-temporal
-            >
+>
               {listening ? "🎙️ Grabando..." : "🎤 Dictar"}
             </button>
 
             <button
-<<<<<<< HEAD
-              onClick={() => {
-                setText("");
-                setInterim("");
-              }}
-=======
-              onClick={() => { setText(""); setInterim(""); }}
->>>>>>> trabajo-temporal
-              disabled={isSubmitting}
+onClick={() => { setText(""); setInterim(""); }}
+disabled={isSubmitting}
               className="px-3 py-1.5 rounded-md border hover:bg-gray-50 disabled:opacity-60"
               title="Limpiar texto"
             >
@@ -226,22 +133,7 @@ export default function Iaclase({ open, onClose, onSubmit }) {
 
         <textarea
           className="w-full h-52 border rounded-md p-2"
-<<<<<<< HEAD
-          placeholder={`Ejemplos:
-- Crea Usuario(id Integer, nombre String, telefono Integer) y Entidad2(id Integer, nombre String, numero Integer)
-- Relación Usuario 1–N Entidad2 (verbo: tiene)
-- Agrega relación N–M entre Usuario y Rol con join Usuario_Rol
-- Añade atributo estado Boolean a Usuario`}
-          value={
-            text +
-            (interim ? (text && !text.endsWith(" ") ? " " : "") + interim : "")
-          }
-          onChange={(e) => {
-            setText(e.target.value);
-            setInterim("");
-          }}
-=======
-          placeholder={`🎯 CAPACIDADES COMPLETAS:
+placeholder={`🎯 CAPACIDADES COMPLETAS:
 
 CRUD SIMPLE:
 • Crear entidad Usuario(id Integer, nombre String, email String)
@@ -267,8 +159,7 @@ SISTEMAS COMPLETOS:
 • Crear sistema de restaurante`}
           value={text + (interim ? (text && !text.endsWith(" ") ? " " : "") + interim : "")}
           onChange={(e) => { setText(e.target.value); setInterim(""); }}
->>>>>>> trabajo-temporal
-          disabled={isSubmitting}
+disabled={isSubmitting}
         />
 
         {errorMsg && (
@@ -278,16 +169,8 @@ SISTEMAS COMPLETOS:
         )}
 
         <div className="mt-3 flex gap-2 justify-end">
-<<<<<<< HEAD
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-md border hover:bg-gray-50 disabled:opacity-60"
-            disabled={isSubmitting}
-          >
-=======
-          <button onClick={onClose} className="px-4 py-2 rounded-md border hover:bg-gray-50 disabled:opacity-60" disabled={isSubmitting}>
->>>>>>> trabajo-temporal
-            Cancelar
+<button onClick={onClose} className="px-4 py-2 rounded-md border hover:bg-gray-50 disabled:opacity-60" disabled={isSubmitting}>
+Cancelar
           </button>
           <button
             onClick={handleSubmit}
@@ -299,16 +182,10 @@ SISTEMAS COMPLETOS:
         </div>
 
         <div className="mt-2 text-xs text-gray-500">
-<<<<<<< HEAD
-          Sugerencia: habla en frases como “Crear entidad Producto con id
-          Integer, nombre String…”. Si ves “Grabando…”, el dictado está activo.
-          Pausa con el mismo botón.
-=======
-          <strong>💡 Tip de dictado:</strong> Habla claramente, por ejemplo: "Crear entidad Producto con id Integer, nombre String y precio BigDecimal".
+<strong>💡 Tip de dictado:</strong> Habla claramente, por ejemplo: "Crear entidad Producto con id Integer, nombre String y precio BigDecimal".
           <br />
           <strong>📌 Importante:</strong> El generador crea solo lo que pides. Para un sistema completo, di "crear sistema de ventas". Para una entidad simple, di "crear entidad Usuario".
->>>>>>> trabajo-temporal
-        </div>
+</div>
       </div>
     </div>
   );

@@ -2,29 +2,10 @@ import React, { useMemo, useState, useEffect } from "react";
 
 // Tipos frecuentes en Spring Boot / JPA
 const TYPE_OPTIONS = [
-<<<<<<< HEAD
-  "String",
-  "Boolean",
-  "Byte",
-  "Short",
-  "Integer",
-  "Long",
-  "Float",
-  "Double",
-  "BigDecimal",
-  "LocalDate",
-  "LocalDateTime",
-  "Instant",
-  "OffsetDateTime",
-  "UUID",
-  "byte[]",
-  "Text",
-=======
-  "String", "Boolean",
+"String", "Boolean",
   "Byte", "Short", "Integer", "Long", "Float", "Double", "BigDecimal",
   "LocalDate", "LocalDateTime", "Instant", "OffsetDateTime",
   "UUID", "byte[]", "Text"
->>>>>>> trabajo-temporal
 ];
 
 export default function EntidadPanel({
@@ -34,37 +15,18 @@ export default function EntidadPanel({
   onUpdateAttr,
   onRemoveAttr,
   onDelete,
-<<<<<<< HEAD
-  onOpenIA,
-  onNamePreview, // ← NUEVO: envía el nombre "en vivo" para la previsualización
-=======
   onOpenIA // ← NUEVO: abre el modal IA (opcional)
->>>>>>> trabajo-temporal
 }) {
   const [name, setName] = useState("");
   const [attrName, setAttrName] = useState("");
   const [attrType, setAttrType] = useState("String");
 
-<<<<<<< HEAD
-  useEffect(() => {
-    setName(node?.data?.label || "");
-  }, [node]);
-=======
   useEffect(() => { setName(node?.data?.label || ""); }, [node]);
->>>>>>> trabajo-temporal
-
+  
   const attrs = useMemo(() => node?.data?.attrs || [], [node]);
 
   if (!node) {
-<<<<<<< HEAD
-    return (
-      <div style={{ color: "#667085" }}>
-        Selecciona una entidad en el lienzo para editarla.
-      </div>
-    );
-=======
     return <div style={{ color: "#667085" }}>Selecciona una entidad en el lienzo para editarla.</div>;
->>>>>>> trabajo-temporal
   }
 
   const canAdd = attrName.trim().length > 0;
@@ -75,49 +37,6 @@ export default function EntidadPanel({
     setAttrName("");
   };
 
-<<<<<<< HEAD
-  // Debounce muy liviano para no spamear el padre
-  // (si quieres, reemplaza por un hook de debounce real)
-  let typingTimer = null;
-  const notifyPreview = (value) => {
-    if (!onNamePreview) return;
-    if (typingTimer) clearTimeout(typingTimer);
-    typingTimer = setTimeout(() => onNamePreview(node.id, value), 120);
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Título + botón IA contextual */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <h3 style={{ marginTop: 0, marginBottom: 0 }}>Entidad</h3>
-        {onOpenIA && (
-          <button
-            type="button"
-            onClick={() =>
-              onOpenIA({
-                scope: "entity",
-                entityName: node?.data?.label || "",
-                currentAttrs: attrs,
-              })
-            }
-            title="Sugerir/Completar atributos con IA"
-            style={{
-              padding: "4px 10px",
-              borderRadius: 8,
-              border: "1px solid #c7d2fe",
-              background: "#eef2ff",
-              color: "#3730a3",
-              fontWeight: 600,
-            }}
-          >
-            IA
-=======
   return (
     <div className="space-y-4">
       {/* Encabezado con título y botón IA */}
@@ -138,123 +57,10 @@ export default function EntidadPanel({
             className="px-3 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-semibold text-sm shadow-md hover:shadow-lg hover:from-purple-600 hover:to-indigo-700 transition-all transform hover:scale-105"
           >
             ✨ IA
->>>>>>> trabajo-temporal
           </button>
         )}
       </div>
 
-<<<<<<< HEAD
-      <label style={{ fontSize: 12 }}>Nombre</label>
-      <input
-        value={name}
-        onChange={(e) => {
-          const v = e.target.value;
-          setName(v);
-          notifyPreview(v); // ← manda el nombre en vivo para la previsualización
-        }}
-        onBlur={() => onChangeName?.(name.trim() || node?.data?.label || "")}
-        placeholder="Ej: Usuario"
-      />
-
-      <div style={{ marginTop: 8 }}>
-        <label style={{ fontSize: 12, display: "block" }}>Atributos</label>
-        {attrs.length ? (
-          <ul style={{ paddingLeft: 16, margin: 0 }}>
-            {attrs.map((a, i) => (
-              <li
-                key={i}
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  marginBottom: 6,
-                  overflowWrap: "anywhere",
-                  wordBreak: "break-word",
-                }}
-              >
-                <input
-                  value={a.name}
-                  onChange={(e) =>
-                    onUpdateAttr?.(i, { ...a, name: e.target.value })
-                  }
-                  style={{ width: 140 }}
-                />
-                <select
-                  value={a.type}
-                  onChange={(e) =>
-                    onUpdateAttr?.(i, { ...a, type: e.target.value })
-                  }
-                >
-                  {TYPE_OPTIONS.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => onRemoveAttr?.(i)}
-                  title="Eliminar atributo"
-                >
-                  🗑️
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div style={{ color: "#888" }}>Sin atributos</div>
-        )}
-      </div>
-
-      {/* fila de inputs */}
-      <div style={{ display: "flex", gap: 8 }}>
-        <input
-          value={attrName}
-          onChange={(e) => setAttrName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") addAttr();
-          }}
-          placeholder="nombre atributo"
-          style={{ flex: 1 }}
-        />
-        <select value={attrType} onChange={(e) => setAttrType(e.target.value)}>
-          {TYPE_OPTIONS.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <button
-        disabled={!canAdd}
-        onClick={addAttr}
-        style={{
-          marginTop: 6,
-          padding: "10px 14px",
-          borderRadius: 10,
-          background: canAdd ? "#2563eb" : "#93c5fd",
-          color: "#fff",
-          border: `1px solid ${canAdd ? "#1d4ed8" : "#93c5fd"}`,
-          fontWeight: 700,
-          cursor: canAdd ? "pointer" : "not-allowed",
-          boxShadow: canAdd ? "0 2px 6px rgba(37,99,235,.35)" : "none",
-        }}
-      >
-        Añadir
-      </button>
-
-      <button
-        style={{
-          marginTop: 12,
-          background: "#fee2e2",
-          border: "1px solid #fecaca",
-          borderRadius: 6,
-          padding: "8px 10px",
-        }}
-        onClick={onDelete}
-      >
-        Eliminar entidad
-=======
       {/* Nombre de la entidad */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border border-blue-200">
         <label className="block text-sm font-semibold text-blue-900 mb-2">
@@ -349,7 +155,6 @@ export default function EntidadPanel({
         className="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-red-100 to-pink-100 border-2 border-red-300 text-red-700 font-bold hover:from-red-200 hover:to-pink-200 transition-all transform hover:scale-[1.02]"
       >
         🗑️ Eliminar entidad
->>>>>>> trabajo-temporal
       </button>
     </div>
   );

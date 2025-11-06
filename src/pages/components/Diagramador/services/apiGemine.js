@@ -4,16 +4,9 @@
 //   y DES-ESCAPA correctamente (sin duplicar backslashes) para que no queden \n literales.
 // - Parser local extendido: CRUD de entidades/atributos + 5 tipos de relación + clear_attrs/only id.
 
-<<<<<<< HEAD
-// ===== Config =====
-const EMBEDDED_FALLBACK_KEY = "AIzaSyCC3nVzJYNF4XWhIedBPfwKNCAT134FTzw"; // último recurso
-let RUNTIME_API_KEY = "";   // settable en runtime con setGeminiApiKey()
-let RUNTIME_MODEL  = "";    // settable en runtime con setGeminiModel()
-=======
 const EMBEDDED_FALLBACK_KEY = "AIzaSyDRGJ3UXInnuy1Yu3OEw5Y6uMqeBMWLl3M";
 let RUNTIME_API_KEY = "";
 let RUNTIME_MODEL  = "";
->>>>>>> trabajo-temporal
 
 /* ===================== Helpers de runtime ===================== */
 function getApiKey() {
@@ -84,7 +77,12 @@ async function callGemini(promptText, { maxOutputTokens = 24000 } = {}) {
     const is404 = err?.status === 404 || /NOT_FOUND|model/i.test(err?.payload || "");
     if (!is404) throw err;
     for (const m of FALLBACK_MODELS) {
-      try { return await _callOnce(m, promptText, { maxOutputTokens }); } catch {}
+      try { 
+        return await _callOnce(m, promptText, { maxOutputTokens }); 
+      } catch (e) {
+        // Intentar con el siguiente modelo
+        console.warn(`Fallback model ${m} failed:`, e.message);
+      }
     }
     throw err;
   }

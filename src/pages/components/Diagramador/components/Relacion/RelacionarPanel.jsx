@@ -1,31 +1,3 @@
-<<<<<<< HEAD
-import React from "react";
-import RelacionCRUD from "./RelacionCRUD";
-
-export default function RelacionarPanel({
-  nodes,
-  edges,
-  onRelacionSimple,
-  onRelacionNM,
-  onUpdateEdge,
-  onDeleteEdge,
-  onOpenIA,
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      <RelacionCRUD
-        nodes={nodes}
-        edges={edges}
-        onRelacionSimple={onRelacionSimple}
-        onRelacionNM={onRelacionNM}
-        onUpdateEdge={onUpdateEdge}
-        onDeleteEdge={onDeleteEdge}
-        onAskIA={onOpenIA}
-      />
-    </div>
-  );
-}
-=======
 import React, { useMemo, useState, useCallback } from "react";
 import RelacionForm from "./RelacionForm";
 import RelacionHistorial from "./RelacionHistorial";
@@ -103,4 +75,3 @@ export default function RelacionarPanel({
 /* ===== Helpers locales ===== */
 const normalizeLegacy = (v) =>
   v === "N" ? "*" : v === "0..N" ? "0..*" : v || "1";
->>>>>>> trabajo-temporal

@@ -2,11 +2,7 @@ import axios from "axios";
 
 // Permite VITE_API_BASE (existente) y VITE_API_BASE_URL (alias) con fallback a http://localhost:8080
 export const API_BASE_URL =
-<<<<<<< HEAD
-  import.meta.env.VITE_API_BASE || "http://localhost:8080";//"https://backendgenerador.up.railway.app;
-=======
   (import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE_URL || "http://localhost:8080");
->>>>>>> trabajo-temporal
 
 const api = axios.create({
   baseURL: API_BASE_URL.replace(/\/+$/, ""),
