@@ -1,27 +1,46 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ProjectsApi } from "../../../api/projects";
 import { DiagramsApi } from "../../../api/diagrams";
+
 import ReactFlow, {
   Background,
   BaseEdge,
   EdgeLabelRenderer,
-  getBezierPath,
+  getStraightPath,
   Handle,
   Position,
+  ReactFlowProvider,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
-/* ---------- Nodo Entidad reutilizado ---------- */
+/* ================== Helper fecha ================== */
+function formatFecha(iso) {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return String(iso ?? "—");
+  }
+}
+
+/* ================== Nodo de clase (preview) ================== */
 function ClassNode({ data }) {
   return (
     <div className="bg-white rounded-md border-2 border-teal-500 w-auto min-w-[120px] max-w-[220px]">
-      <div className="bg-teal-500 text-white font-bold text-center px-1 py-0.5 text-xs truncate">
+      <div className="bg-teal-500 text-white font-bold text-center px-1 py-0.5 text-[10px] truncate">
         {data.label || "Entidad"}
       </div>
-      <div className="p-1 min-h-[20px]">
+      <div className="p-1 min-h-[18px]">
         {data.attrs?.length ? (
-          <ul className="m-0 pl-3 list-disc text-[10px] leading-tight text-gray-700">
+          <ul className="m-0 pl-3 list-disc text-[9px] leading-tight text-gray-700">
             {data.attrs.map((a, i) => (
               <li key={i}>
                 {a.name}: <i>{a.type}</i>
@@ -29,7 +48,7 @@ function ClassNode({ data }) {
             ))}
           </ul>
         ) : (
-          <div className="text-gray-400 text-[10px]">Sin atributos…</div>
+          <div className="text-gray-400 text-[9px]">Sin atributos…</div>
         )}
       </div>
       <Handle type="target" position={Position.Left} id="l" style={{ visibility: "hidden" }} />
@@ -38,25 +57,21 @@ function ClassNode({ data }) {
   );
 }
 
-/* ---------- Relación UML reutilizada ---------- */
+/* ================== Edge UML (preview) ================== */
 function UmlEdge({
   id,
   sourceX,
   sourceY,
   targetX,
   targetY,
-  sourcePosition,
-  targetPosition,
   data,
   markerEnd,
 }) {
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const [edgePath, labelX, labelY] = getStraightPath({
     sourceX,
     sourceY,
     targetX,
     targetY,
-    sourcePosition,
-    targetPosition,
   });
 
   return (
@@ -83,54 +98,72 @@ function UmlEdge({
   );
 }
 
-/* ---------- Utilidades de localización (locale y zona horaria) ---------- */
-const USER_LOCALE =
-  (typeof navigator !== "undefined" && navigator.language) ? navigator.language : "es-BO";
-const USER_TIMEZONE =
-  (typeof Intl !== "undefined" &&
-    Intl.DateTimeFormat &&
-    Intl.DateTimeFormat().resolvedOptions().timeZone) || "America/La_Paz";
+/* ================== Mini visor con fitView real ================== */
+function PreviewFlowInner({ nodes, edges, nodeTypes, edgeTypes }) {
+  const instRef = useRef(null);
 
-/* Ajuste visual fijo en horas (negativo para restar). En Bolivia (UTC-4): -4 */
-const DISPLAY_OFFSET_HOURS =
-  (typeof import.meta !== "undefined" &&
-    import.meta.env &&
-    import.meta.env.VITE_DISPLAY_OFFSET_HOURS !== undefined)
-    ? Number(import.meta.env.VITE_DISPLAY_OFFSET_HOURS)
-    : -4;
+  const doFit = useCallback(() => {
+    const i = instRef.current;
+    if (!i) return;
+    // permitir alejar mucho para diagramas grandes
+    i.fitView({ padding: 0.08, includeHiddenNodes: true, minZoom: 0.01, maxZoom: 1 });
+  }, []);
 
-const MS_PER_HOUR = 3600000;
-function applyOffset(date, hours) {
-  return new Date(date.getTime() + hours * MS_PER_HOUR);
+  const onInit = (instance) => {
+    instRef.current = instance;
+    // dar un microtiempo para que mida el contenedor
+    requestAnimationFrame(() => doFit());
+  };
+
+  // re-encajar cuando cambien los datos
+  useEffect(() => {
+    if (!instRef.current) return;
+    doFit();
+  }, [nodes, edges, doFit]);
+
+  // re-encajar si cambia el tamaño de la tarjeta
+  useEffect(() => {
+    const onResize = () => doFit();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [doFit]);
+
+  return (
+    <ReactFlow
+      onInit={onInit}
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      edgeTypes={edgeTypes}
+      // preview = sin interacción
+      nodesDraggable={false}
+      nodesConnectable={false}
+      elementsSelectable={false}
+      zoomOnScroll={false}
+      zoomOnPinch={false}
+      zoomOnDoubleClick={false}
+      panOnDrag={false}
+      // permitir mucho alejamiento
+      minZoom={0.01}
+      maxZoom={1}
+      fitView={false}
+      style={{ width: "100%", height: "100%" }}
+    >
+      <Background gap={12} size={1} />
+    </ReactFlow>
+  );
 }
 
-/* ---------- Formateo de fecha y hora (restando 4 horas) ---------- */
-function formatFecha(iso) {
-  if (!iso) return "—";
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return String(iso);
-
-    // Restar horas para alinear con UTC-4 (o el valor configurado)
-    const adjusted = applyOffset(d, DISPLAY_OFFSET_HOURS);
-
-    return adjusted.toLocaleString(USER_LOCALE, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-      timeZone: USER_TIMEZONE, // fuerza la zona local detectada (fallback: America/La_Paz)
-      // timeZoneName: "short",
-    });
-  } catch {
-    return String(iso);
-  }
+function PreviewFlow(props) {
+  // Provider requerido por React Flow nuevas versiones
+  return (
+    <ReactFlowProvider>
+      <PreviewFlowInner {...props} />
+    </ReactFlowProvider>
+  );
 }
 
-/* ---------- Página de Proyectos ---------- */
+/* ================== Página de proyectos (grid) ================== */
 export default function Proyecto() {
   const [proyectos, setProyectos] = useState([]);
   const navigate = useNavigate();
@@ -145,17 +178,14 @@ export default function Proyecto() {
       const enriched = await Promise.all(
         list.map(async (p) => {
           try {
-            // 🔹 Cargar el diagrama asociado
             const d = await ProjectsApi.getDiagram(p.id);
-
-            // 🔹 Además pedir al endpoint /api/diagrams/{id} para traer updatedAt
             const fullDiagram = await DiagramsApi.get(d.id);
 
             return {
               ...p,
               previewNodes: d.nodes ? JSON.parse(d.nodes) : [],
               previewEdges: d.edges ? JSON.parse(d.edges) : [],
-              diagramEditedAt: fullDiagram.updatedAt, // 🔹 fecha de edición del diagrama
+              diagramEditedAt: fullDiagram.updatedAt || fullDiagram.modifiedAt || null,
             };
           } catch {
             return { ...p, previewNodes: [], previewEdges: [], diagramEditedAt: null };
@@ -221,32 +251,22 @@ export default function Proyecto() {
             onClick={() => abrirProyecto(p)}
             title={p.name}
           >
-            {/* Vista previa con ReactFlow */}
+            {/* Vista previa con ReactFlow (encaja TODO automáticamente) */}
             <div className="aspect-[4/3] bg-gray-50 relative">
               {p.previewNodes.length > 0 ? (
-                <ReactFlow
+                <PreviewFlow
                   nodes={p.previewNodes}
                   edges={p.previewEdges}
                   nodeTypes={nodeTypes}
                   edgeTypes={edgeTypes}
-                  fitView
-                  nodesDraggable={false}
-                  nodesConnectable={false}
-                  elementsSelectable={false}
-                  zoomOnScroll={false}
-                  zoomOnPinch={false}
-                  zoomOnDoubleClick={false}
-                  panOnDrag={false}
-                >
-                  <Background gap={12} size={1} />
-                </ReactFlow>
+                />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
                   Sin vista previa
                 </div>
               )}
 
-              {/* Botón eliminar */}
+              {/* Botón eliminar (no interfiere con navega) */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -262,9 +282,7 @@ export default function Proyecto() {
             {/* Info */}
             <div className="p-3">
               <div className="font-medium truncate">{p.name}</div>
-              <div className="text-xs text-gray-500 mt-1">
-                Creado: {formatFecha(p.createdAt)}
-              </div>
+              <div className="text-xs text-gray-500 mt-1">Creado: {formatFecha(p.createdAt)}</div>
               {p.diagramEditedAt && (
                 <div className="text-[11px] text-gray-400 mt-0.5">
                   Diagrama editado: {formatFecha(p.diagramEditedAt)}

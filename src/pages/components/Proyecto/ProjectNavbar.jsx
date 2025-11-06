@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { SiSpringboot } from "react-icons/si";
-import { FaFolderOpen, FaUsers, FaFileAlt, FaFileExport, FaFileImport } from "react-icons/fa";
+import { SiSpringboot, SiFlutter } from "react-icons/si";
+import { FaFolderOpen, FaUsers, FaFileAlt, FaFileExport, FaFileImport, FaImage, FaCamera } from "react-icons/fa";
 import { createPortal } from "react-dom";
 
 function formatFecha(iso) {
@@ -114,12 +114,103 @@ function ArchivoMenuPortal({ anchorRef, open, onClose, onExport, onImport }) {
   return createPortal(menu, document.body);
 }
 
+/** Menú Importar Imagen en Portal */
+function ImportImageMenuPortal({ anchorRef, open, onClose, onCamera, onFile }) {
+  const menuRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+
+  const place = () => {
+    const btn = anchorRef.current;
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    setPos({
+      top: r.bottom + 6 + window.scrollY,
+      left: r.left + window.scrollX,
+      width: Math.max(176, r.width),
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    place();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onScrollOrResize = () => place();
+    const onKey = (e) => e.key === "Escape" && onClose?.();
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => {
+      if (!menuRef.current) return;
+      if (
+        !menuRef.current.contains(e.target) &&
+        !anchorRef.current?.contains(e.target)
+      ) {
+        onClose?.();
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const menu = (
+    <div
+      ref={menuRef}
+      role="menu"
+      aria-label="Opciones de Importar Imagen"
+      style={{
+        position: "fixed",
+        top: pos.top,
+        left: pos.left,
+        width: pos.width,
+        zIndex: 9999,
+      }}
+      className="rounded-md border bg-white shadow-lg p-1"
+    >
+      <button
+        role="menuitem"
+        onClick={() => { onClose?.(); onCamera?.(); }}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-gray-50"
+      >
+        <FaCamera className="w-4 h-4" />
+        Desde Cámara
+      </button>
+      <button
+        role="menuitem"
+        onClick={() => { onClose?.(); onFile?.(); }}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-gray-50"
+      >
+        <FaImage className="w-4 h-4" />
+        Desde Archivo
+      </button>
+    </div>
+  );
+
+  return createPortal(menu, document.body);
+}
+
 export default function ProjectNavbar({
   project,
   onGenerate,
   onSave,
   onExport,   // opcional
   onImport,   // opcional
+  onGenerateFlutter, // nuevo
+  onImportImageFromCamera, // nuevo
+  onImportImageFromFile, // nuevo
   onlineCount,
   isGenerating: isGeneratingProp,
 }) {
@@ -127,7 +218,10 @@ export default function ProjectNavbar({
   const isGenerating = typeof isGeneratingProp === "boolean" ? isGeneratingProp : internalGenerating;
 
   const [openArchivo, setOpenArchivo] = useState(false);
+  const [openImportImage, setOpenImportImage] = useState(false);
+  
   const archivoBtnRef = useRef(null);
+  const importImageBtnRef = useRef(null);
 
   const handleGenerate = async () => {
     if (!onGenerate || isGenerating) return;
@@ -161,6 +255,60 @@ export default function ProjectNavbar({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Importar imagen (anchor) */}
+        <button
+          ref={importImageBtnRef}
+          type="button"
+          onClick={() => setOpenImportImage((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={openImportImage}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-700 text-sm font-medium transition-colors"
+        >
+          <FaImage className="w-5 h-5" />
+          Importar imagen
+        </button>
+
+        {/* Portal con menú de importar imagen */}
+        <ImportImageMenuPortal
+          anchorRef={importImageBtnRef}
+          open={openImportImage}
+          onClose={() => setOpenImportImage(false)}
+          onCamera={onImportImageFromCamera}
+          onFile={onImportImageFromFile}
+        />
+
+        {/* General Flutter */}
+        <button
+          onClick={onGenerateFlutter}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-medium transition-colors"
+        >
+          <SiFlutter className="w-5 h-5" />
+          General Flutter
+        </button>
+
+        {/* General Spring Boot */}
+        <button
+          onClick={handleGenerate}
+          disabled={isGenerating}
+          aria-busy={isGenerating}
+          aria-live="polite"
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-green-300 bg-green-50 text-green-700 text-sm font-medium transition-colors ${
+            isGenerating ? "opacity-60 cursor-not-allowed" : "hover:bg-green-100"
+          }`}
+        >
+          {isGenerating ? (
+            <>
+              <Spinner className="w-4 h-4" />
+              <span>Generando…</span>
+            </>
+          ) : (
+            <>
+              <SiSpringboot className="w-5 h-5 text-green-700" />
+              <span>General Spring Boot</span>
+            </>
+          )}
+        </button>
+
         {/* Archivo (anchor) */}
         <button
           ref={archivoBtnRef}
@@ -194,29 +342,6 @@ export default function ProjectNavbar({
           onExport={onExport}
           onImport={onImport}
         />
-
-        {/* Generar */}
-        <button
-          onClick={handleGenerate}
-          disabled={isGenerating}
-          aria-busy={isGenerating}
-          aria-live="polite"
-          className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm bg-green-50 text-green-700 ${
-            isGenerating ? "opacity-60 cursor-not-allowed" : "hover:bg-green-100"
-          }`}
-        >
-          {isGenerating ? (
-            <>
-              <Spinner className="w-4 h-4" />
-              <span>Generando…</span>
-            </>
-          ) : (
-            <>
-              <SiSpringboot className="w-5 h-5 text-green-700" />
-              <span>Generar</span>
-            </>
-          )}
-        </button>
 
         {/* Ver proyectos */}
         <Link to="/proyectos" className="flex items-center gap-2 px-3 py-2 rounded-md border hover:bg-gray-50 text-sm">

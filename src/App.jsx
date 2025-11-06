@@ -3,6 +3,8 @@ import AppRoutes from "./routes/AppRoutes"
 import Navbar from "./components/Navbar"
 import Sidebar from "./components/Sidebar"
 import React, { useState, useEffect } from "react";
+import ErrorBoundary from "./components/ErrorBoundary";
+import ToastProvider from "./components/ToastProvider";
 
 function AppContent({ sidebarOpen, setSidebarOpen }) {
   const location = useLocation();
@@ -40,8 +42,12 @@ export default function App() {
   }, []);
 
   return (
-    <BrowserRouter>
-      <AppContent sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <ToastProvider>
+        <BrowserRouter>
+          <AppContent sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+        </BrowserRouter>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }
