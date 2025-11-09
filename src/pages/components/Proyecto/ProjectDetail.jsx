@@ -6,6 +6,7 @@ import { Sockend } from "../../../api/socket"; // SockJS + STOMP
 import Diagramador from "../Diagramador/Diagramador";
 import ProjectNavbar from "./ProjectNavbar";
 import { useToast } from "../../../hooks/useToast";
+import ImageProcessingModal from "../Diagramador/components/ImageProcessingModal";
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -31,6 +32,15 @@ export default function ProjectDetail() {
   const videoRef = useRef(null);
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState(null);
+
+  // Estado para el modal de procesamiento de imagen
+  const [imageProcessing, setImageProcessing] = useState({
+    isOpen: false,
+    stage: 'uploading', // uploading, processing, creating, completed, error
+    className: null,
+    attributes: null,
+    methods: null
+  });
 
   // ---- Exportar (PUML por defecto)
   const handleExport = () => {
@@ -70,6 +80,73 @@ export default function ProjectDetail() {
     imageFileRef.current?.click();
   };
 
+  // ---- Función auxiliar para procesar imagen con modal (detección automática)
+  const processImageWithModal = async (file) => {
+    // Mostrar modal y iniciar procesamiento
+    setImageProcessing({
+      isOpen: true,
+      stage: 'uploading',
+      className: null,
+      attributes: null,
+      methods: null
+    });
+
+    try {
+      // Simular carga
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Cambiar a procesamiento con IA
+      setImageProcessing(prev => ({ ...prev, stage: 'processing' }));
+      
+      // Procesar imagen - SIEMPRE como diagrama completo (detecta automáticamente)
+      // Si solo hay una clase sin relaciones, funcionará igual
+      const result = await diagramadorRef.current?.processDiagram(file);
+      
+      // Cambiar a creación de clase
+      setImageProcessing(prev => ({ ...prev, stage: 'creating' }));
+      
+      // Simular creación
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Completado
+      const classCount = result?.originalDiagramInfo?.classes?.length || 0;
+      const relationCount = result?.originalDiagramInfo?.relations?.length || 0;
+      const joinTableCount = result?.diagramData?.nodes?.filter(n => 
+        n.attrs?.length === 3 && n.attrs?.some(a => a.name?.endsWith('Id'))
+      ).length || 0;
+      
+      let message = `${classCount} clase${classCount !== 1 ? 's' : ''}`;
+      
+      if (joinTableCount > 0) {
+        message += ` (+ ${joinTableCount} tabla${joinTableCount !== 1 ? 's' : ''} intermedia${joinTableCount !== 1 ? 's' : ''})`;
+      }
+      
+      if (relationCount > 0) {
+        message += ` y ${relationCount} relación${relationCount !== 1 ? 'es' : ''}`;
+      }
+      
+      setImageProcessing(prev => ({
+        ...prev,
+        stage: 'completed',
+        className: message,
+        attributes: result?.originalDiagramInfo?.classes || [],
+        methods: result?.originalDiagramInfo?.relations || []
+      }));
+
+    } catch (error) {
+      console.error("Error procesando imagen:", error);
+      setImageProcessing(prev => ({
+        ...prev,
+        stage: 'error'
+      }));
+    }
+  };
+
+  // ---- Procesar imagen directamente sin preguntar
+  const handleImageSelected = async (file) => {
+    await processImageWithModal(file);
+  };
+
   // ---- Cuando seleccionan imagen
   const onImageFileSelected = async (e) => {
     const file = e.target.files?.[0];
@@ -81,10 +158,7 @@ export default function ProjectDetail() {
       return;
     }
 
-    toast.info("Procesando imagen...");
-    // Aquí implementarías la lógica para procesar la imagen
-    // Por ejemplo: diagramadorRef.current?.processImage(file);
-    
+    handleImageSelected(file);
     e.target.value = "";
   };
 
@@ -119,12 +193,10 @@ export default function ProjectDetail() {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(videoRef.current, 0, 0);
     
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (blob) {
-        toast.info("Procesando imagen capturada...");
-        // Aquí implementarías la lógica para procesar la imagen capturada
-        // Por ejemplo: diagramadorRef.current?.processImage(blob);
         handleCloseCamera();
+        handleImageSelected(blob);
       }
     }, 'image/jpeg');
   };
@@ -286,6 +358,16 @@ export default function ProjectDetail() {
           </div>
         </div>
       )}
+
+      {/* Modal de procesamiento de imagen */}
+      <ImageProcessingModal
+        isOpen={imageProcessing.isOpen}
+        stage={imageProcessing.stage}
+        className={imageProcessing.className}
+        attributes={imageProcessing.attributes}
+        methods={imageProcessing.methods}
+        onClose={() => setImageProcessing(prev => ({ ...prev, isOpen: false }))}
+      />
 
       <div className="flex-1 min-h-0">
         {diagramId ? (

@@ -21,6 +21,9 @@ import useIA from "./SubDiagrama/useIA";
 import useGeneracionCodigo from "./SubDiagrama/useGeneracionCodigo";
 import Spinner from "../../../components/Spinner";
 
+// Servicio para procesamiento de imágenes
+import { processImageAndCreateEntity, processImageAndCreateDiagram } from "./services/imageProcessor";
+
 // Utils
 import { findBestHandle, updateNodesWithHandleUsage } from "./SubDiagrama/utils";
 // Tipos para ReactFlow - definidos fuera del componente para evitar warnings
@@ -92,6 +95,158 @@ const Diagramador = forwardRef(function Diagramador(
     edges,
   });
 
+  // Función para procesar imagen y crear entidad
+  const handleProcessImage = async (imageFile) => {
+    try {
+      const result = await processImageAndCreateEntity(
+        imageFile,
+        // onSuccess
+        ({ entityData }) => {
+          console.log("Creando entidad desde imagen:", entityData);
+          
+          // Crear nueva entidad con los datos extraídos
+          const id = String(Date.now());
+          const base = lastActionRef.current || { x: 100, y: 100 };
+          
+          setNodes((ns) =>
+            ns.concat({
+              id,
+              type: "classNode",
+              position: { 
+                x: base.x + jitter(ns.length), 
+                y: base.y + jitter(ns.length) 
+              },
+              data: entityData,
+            })
+          );
+          
+          setSelectedId(id);
+          scheduleSnapshot();
+        },
+        // onError
+        (error) => {
+          console.error("Error procesando imagen:", error);
+          throw error;
+        }
+      );
+      
+      return result;
+    } catch (error) {
+      console.error("Error en handleProcessImage:", error);
+      throw error;
+    }
+  };
+
+  // Función para procesar diagrama completo con múltiples clases y relaciones
+  const handleProcessDiagram = async (imageFile) => {
+    try {
+      const result = await processImageAndCreateDiagram(
+        imageFile,
+        // onSuccess
+        ({ diagramData }) => {
+          console.log("Creando diagrama completo desde imagen:", diagramData);
+          
+          const newNodes = [];
+          const newEdges = [];
+          const nodeIdMap = {};
+
+          // Crear nodos usando las posiciones detectadas de la imagen
+          diagramData.nodes.forEach((nodeData) => {
+            const id = String(Date.now() + Math.random());
+            nodeIdMap[nodeData.id] = id;
+            
+            newNodes.push({
+              id,
+              type: "classNode",
+              position: nodeData.position || { x: 100, y: 100 }, // Usar posición detectada
+              data: {
+                label: nodeData.label,
+                attrs: nodeData.attrs,
+                usage: {
+                  // Inicializar contadores de uso de handles
+                  target: { tl: 0, l1: 0, l2: 0, bl: 0, t1: 0, t2: 0, t3: 0, t4: 0, tr: 0, r1: 0, r2: 0, br: 0 },
+                  source: { tl2: 0, l3: 0, l4: 0, bl2: 0, b1: 0, b2: 0, b3: 0, b4: 0, tr2: 0, r3: 0, r4: 0, br2: 0 }
+                }
+              }
+            });
+          });
+
+          // Función auxiliar para encontrar el mejor handle disponible
+          const findBestHandle = (nodeId, isSource) => {
+            const node = newNodes.find(n => n.id === nodeId);
+            if (!node) return isSource ? 'r1' : 'l1';
+            
+            const usage = node.data.usage;
+            const handles = isSource ? usage.source : usage.target;
+            
+            // Encontrar el handle con menor uso
+            const handleEntries = Object.entries(handles);
+            handleEntries.sort((a, b) => a[1] - b[1]);
+            
+            return handleEntries[0][0];
+          };
+
+          // Crear aristas con múltiples puntos de conexión
+          diagramData.edges.forEach((edgeData, index) => {
+            const sourceId = nodeIdMap[edgeData.source];
+            const targetId = nodeIdMap[edgeData.target];
+
+            if (sourceId && targetId) {
+              // Encontrar los mejores handles disponibles
+              const sourceHandle = findBestHandle(sourceId, true);
+              const targetHandle = findBestHandle(targetId, false);
+              
+              // Actualizar contadores de uso
+              const sourceNode = newNodes.find(n => n.id === sourceId);
+              const targetNode = newNodes.find(n => n.id === targetId);
+              
+              if (sourceNode) {
+                sourceNode.data.usage.source[sourceHandle]++;
+              }
+              if (targetNode) {
+                targetNode.data.usage.target[targetHandle]++;
+              }
+
+              newEdges.push({
+                id: `e${Date.now()}-${index}`,
+                source: sourceId,
+                target: targetId,
+                sourceHandle: sourceHandle,
+                targetHandle: targetHandle,
+                type: "uml",
+                label: edgeData.verb || edgeData.label,
+                data: {
+                  mA: edgeData.mA || "1",
+                  mB: edgeData.mB || "1",
+                  verb: edgeData.verb || edgeData.label || "",
+                  relType: edgeData.relType || "1-1",
+                  relKind: edgeData.relKind || "ASSOC",
+                  direction: edgeData.direction || "NONE"
+                }
+              });
+            }
+          });
+
+          // Agregar los nuevos nodos y aristas
+          setNodes((ns) => ns.concat(newNodes));
+          setEdges((es) => es.concat(newEdges));
+          
+          scheduleSnapshot();
+        },
+        // onError
+        (error) => {
+          console.error("Error procesando diagrama:", error);
+          throw error;
+        }
+      );
+      
+      return result;
+    } catch (error) {
+      console.error("Error en handleProcessDiagram:", error);
+      throw error;
+    }
+  };
+
   useImperativeHandle(ref, () => ({
     persistNow,
     handleGenerate,
@@ -99,6 +254,8 @@ const Diagramador = forwardRef(function Diagramador(
     exportPUML,
     importFromJSONText,
     importFromPUMLText,
+    processImage: handleProcessImage,
+    processDiagram: handleProcessDiagram,
   }));
 
   const selectedNode = useMemo(
@@ -161,18 +318,19 @@ const Diagramador = forwardRef(function Diagramador(
         onGenerate={handleGenerate}
         onOpenIA={() => setIaOpen(true)}
         // CRUD de atributos de la entidad seleccionada
-        onChangeName={(name) =>
-          selectedId &&
+        onChangeName={(name) => {
+          if (!selectedId) return;
           setNodes((ns) =>
             ns.map((n) =>
               n.id === selectedId
                 ? { ...n, data: { ...n.data, label: name } }
                 : n
             )
-          )
-        }
-        onAddAttr={(attr) =>
-          selectedId &&
+          );
+          scheduleSnapshot();
+        }}
+        onAddAttr={(attr) => {
+          if (!selectedId) return;
           setNodes((ns) =>
             ns.map((n) => {
               if (n.id !== selectedId) return n;
@@ -181,10 +339,11 @@ const Diagramador = forwardRef(function Diagramador(
                 data: { ...n.data, attrs: [...(n.data?.attrs || []), attr] },
               };
             })
-          )
-        }
-        onUpdateAttr={(index, value) =>
-          selectedId &&
+          );
+          scheduleSnapshot();
+        }}
+        onUpdateAttr={(index, value) => {
+          if (!selectedId) return;
           setNodes((ns) =>
             ns.map((n) => {
               if (n.id !== selectedId) return n;
@@ -192,10 +351,11 @@ const Diagramador = forwardRef(function Diagramador(
               arr[index] = value;
               return { ...n, data: { ...n.data, attrs: arr } };
             })
-          )
-        }
-        onRemoveAttr={(index) =>
-          selectedId &&
+          );
+          scheduleSnapshot();
+        }}
+        onRemoveAttr={(index) => {
+          if (!selectedId) return;
           setNodes((ns) =>
             ns.map((n) => {
               if (n.id !== selectedId) return n;
@@ -203,8 +363,9 @@ const Diagramador = forwardRef(function Diagramador(
               arr.splice(index, 1);
               return { ...n, data: { ...n.data, attrs: arr } };
             })
-          )
-        }
+          );
+          scheduleSnapshot();
+        }}
         onDeleteEntity={() => {
           if (!selectedId) return;
           setNodes((ns) => ns.filter((n) => n.id !== selectedId));

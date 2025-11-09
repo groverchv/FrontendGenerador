@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { SiSpringboot, SiFlutter } from "react-icons/si";
-import { FaFolderOpen, FaUsers, FaFileAlt, FaFileExport, FaFileImport, FaImage, FaCamera } from "react-icons/fa";
+import { FaFolderOpen, FaUsers, FaFileAlt, FaFileExport, FaFileImport, FaImage, FaCamera, FaQuestionCircle } from "react-icons/fa";
 import { createPortal } from "react-dom";
 
 function formatFecha(iso) {
@@ -211,6 +211,7 @@ export default function ProjectNavbar({
   onGenerateFlutter, // nuevo
   onImportImageFromCamera, // nuevo
   onImportImageFromFile, // nuevo
+  onShowExamples, // nuevo
   onlineCount,
   isGenerating: isGeneratingProp,
 }) {
