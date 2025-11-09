@@ -87,13 +87,38 @@ const Diagramador = forwardRef(function Diagramador(
     scheduleSnapshot,
   });
 
-  // Generación de código
+  // Generación de código Spring Boot
   const { handleGenerate } = useGeneracionCodigo({
     projectName,
     packageBase: "com.example.app",
     nodes,
     edges,
   });
+
+  // Generación de código Flutter
+  const handleGenerateFlutter = async () => {
+    try {
+      const { generateFlutterApp } = await import("./generadorFlutter/generadorFlutter");
+      
+      // Mostrar notificación de inicio
+      console.log("🚀 Iniciando generación de Flutter...");
+      
+      await generateFlutterApp({
+        projectName,
+        backendUrl: "http://localhost:8080",
+        nodes,
+        edges,
+        onProgress: ({ step, message }) => {
+          console.log(`[Flutter ${step}] ${message}`);
+        },
+      });
+      
+      console.log("✅ Proyecto Flutter generado exitosamente");
+    } catch (error) {
+      console.error("❌ Error generando Flutter:", error);
+      throw error; // Re-lanzar para que el componente padre lo maneje
+    }
+  };
 
   // Función para procesar imagen y crear entidad
   const handleProcessImage = async (imageFile) => {
@@ -250,6 +275,7 @@ const Diagramador = forwardRef(function Diagramador(
   useImperativeHandle(ref, () => ({
     persistNow,
     handleGenerate,
+    handleGenerateFlutter,
     exportJSON,
     exportPUML,
     importFromJSONText,

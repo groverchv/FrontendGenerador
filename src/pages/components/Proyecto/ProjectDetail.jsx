@@ -69,10 +69,17 @@ export default function ProjectDetail() {
   };
 
   // ---- Generar Flutter
-  const handleGenerateFlutter = () => {
-    toast.info("Generando código Flutter...");
-    // Aquí implementarías la lógica para generar código Flutter
-    // Por ejemplo: diagramadorRef.current?.generateFlutter();
+  const handleGenerateFlutter = async () => {
+    try {
+      if (diagramadorRef.current?.handleGenerateFlutter) {
+        await diagramadorRef.current.handleGenerateFlutter();
+      } else {
+        toast.error("Error: No se pudo generar el código Flutter");
+      }
+    } catch (error) {
+      console.error("Error generando Flutter:", error);
+      toast.error(`Error generando Flutter: ${error.message}`);
+    }
   };
 
   // ---- Importar imagen desde archivo

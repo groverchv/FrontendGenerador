@@ -214,9 +214,13 @@ export default function ProjectNavbar({
   onShowExamples, // nuevo
   onlineCount,
   isGenerating: isGeneratingProp,
+  isGeneratingFlutter: isGeneratingFlutterProp,
 }) {
   const [internalGenerating, setInternalGenerating] = useState(false);
+  const [internalGeneratingFlutter, setInternalGeneratingFlutter] = useState(false);
+  
   const isGenerating = typeof isGeneratingProp === "boolean" ? isGeneratingProp : internalGenerating;
+  const isGeneratingFlutter = typeof isGeneratingFlutterProp === "boolean" ? isGeneratingFlutterProp : internalGeneratingFlutter;
 
   const [openArchivo, setOpenArchivo] = useState(false);
   const [openImportImage, setOpenImportImage] = useState(false);
@@ -237,6 +241,22 @@ export default function ProjectNavbar({
     } else {
       setInternalGenerating(true);
       setTimeout(() => setInternalGenerating(false), 800);
+    }
+  };
+
+  const handleGenerateFlutter = async () => {
+    if (!onGenerateFlutter || isGeneratingFlutter) return;
+    const maybe = onGenerateFlutter();
+    if (maybe?.then) {
+      try {
+        setInternalGeneratingFlutter(true);
+        await maybe;
+      } finally {
+        setInternalGeneratingFlutter(false);
+      }
+    } else {
+      setInternalGeneratingFlutter(true);
+      setTimeout(() => setInternalGeneratingFlutter(false), 800);
     }
   };
 
@@ -280,11 +300,25 @@ export default function ProjectNavbar({
 
         {/* General Flutter */}
         <button
-          onClick={onGenerateFlutter}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-medium transition-colors"
+          onClick={handleGenerateFlutter}
+          disabled={isGeneratingFlutter}
+          aria-busy={isGeneratingFlutter}
+          aria-live="polite"
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-blue-300 bg-blue-50 text-blue-700 text-sm font-medium transition-colors ${
+            isGeneratingFlutter ? "opacity-60 cursor-not-allowed" : "hover:bg-blue-100"
+          }`}
         >
-          <SiFlutter className="w-5 h-5" />
-          General Flutter
+          {isGeneratingFlutter ? (
+            <>
+              <Spinner className="w-4 h-4" />
+              <span>Generando Flutter…</span>
+            </>
+          ) : (
+            <>
+              <SiFlutter className="w-5 h-5" />
+              <span>General Flutter</span>
+            </>
+          )}
         </button>
 
         {/* General Spring Boot */}
