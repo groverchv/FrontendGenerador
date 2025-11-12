@@ -3,17 +3,45 @@
 import { getDeltaFromUserText } from "../services/apiGemine";
 import { buildPrompt2 } from "../generador/promt2";
 import {
-  ensureCoherentAttrs,
-  normalizeEntityName,
-  normalizeAttrName,
-  normalizeType,
-  normalizeMultiplicity,
   cohereRelation,
+  ensureCoherentAttrs,
   joinNameFor,
-  smartSuggestAttrs
+  normalizeAttrName,
+  normalizeEntityName,
+  normalizeMultiplicity,
+  normalizeType,
+  smartSuggestAttrs,
 } from "./iaCoherencia";
 import { applyAutoLayout, optimizeEdgeCrossings } from "./autoLayout";
+import { SOURCE_HANDLES, TARGET_HANDLES } from "../../../../constants";
 
+const REL_KIND_ALIASES = new Map([
+  ["ASSOCIATION", "ASSOC"],
+  ["ASOCIACION", "ASSOC"],
+  ["RELACION", "ASSOC"],
+  ["RELATION", "ASSOC"],
+  ["AGGREGATION", "AGGR"],
+  ["AGREGACION", "AGGR"],
+  ["AGREGATE", "AGGR"],
+  ["AGREGADO", "AGGR"],
+  ["COMPOSITION", "COMP"],
+  ["COMPOSICION", "COMP"],
+  ["COMPOSITE", "COMP"],
+  ["INHERITANCE", "INHERIT"],
+  ["HERENCIA", "INHERIT"],
+  ["GENERALIZACION", "INHERIT"],
+  ["GENERALIZATION", "INHERIT"],
+  ["DEPENDENCY", "DEPEND"],
+  ["DEPENDENCIA", "DEPEND"],
+  ["DEPEND", "DEPEND"],
+]);
+
+const normalizeRelKind = (raw) => {
+  if (!raw) return "ASSOC";
+  const base = String(raw).trim().toUpperCase();
+  const ascii = base.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return REL_KIND_ALIASES.get(base) || REL_KIND_ALIASES.get(ascii) || "ASSOC";
+};
 const norm = (s="") => s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 const isGeneric = (n="") => /^((atribu|propi|campo)[a-z]*)\d+$/i.test(n);
 
@@ -41,8 +69,8 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
     
     // Inicializar usage para tracking de handles
     const initialUsage = {
-      target: { tl:0, l1:0, l2:0, bl:0, t1:0, t2:0, t3:0, t4:0, tr:0, r1:0, r2:0, br:0 },
-      source: { tl2:0, l3:0, l4:0, bl2:0, b1:0, b2:0, b3:0, b4:0, tr2:0, r3:0, r4:0, br2:0 }
+      target: Object.fromEntries(TARGET_HANDLES.map(h => [h, 0])),
+      source: Object.fromEntries(SOURCE_HANDLES.map(h => [h, 0])),
     };
     
     setNodes(ns => ns.concat({ 
@@ -84,90 +112,112 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
   };
 
   // Función para encontrar el siguiente handle libre en el estado ACTUAL
-  const findFreeHandle = (nodeId, type, currentNodes) => {
-    const node = currentNodes.find(n => n.id === nodeId);
-    if (!node) return type === "source" ? "b1" : "t1"; // Default
-    
-    const usage = node.data?.usage || { target: {}, source: {} };
-    const handles = type === "source" 
-      ? ["b1", "b2", "b3", "b4", "l3", "l4", "r3", "r4", "tl2", "tr2", "bl2", "br2"]
-      : ["t1", "t2", "t3", "t4", "l1", "l2", "r1", "r2", "tl", "tr", "bl", "br"];
-    
-    // Buscar el handle menos usado
-    let minUsage = Infinity;
-    let bestHandle = handles[0];
-    
-    for (const h of handles) {
-      const count = usage[type]?.[h] || 0;
+  const findFreeHandle = (nodeRef, type, nodesSnapshot = []) => {
+    const handlePool = type === "source" ? SOURCE_HANDLES : TARGET_HANDLES;
+    if (!nodeRef) return handlePool[0];
+
+    const node =
+      typeof nodeRef === "string"
+        ? nodesSnapshot.find(n => n.id === nodeRef)
+        : nodeRef;
+
+    if (!node) return handlePool[0];
+
+    const usageBucket =
+      (node.data?.usage && (type === "source" ? node.data.usage.source : node.data.usage.target)) || {};
+
+    let bestHandle = handlePool[0];
+    let minUsage = Number.POSITIVE_INFINITY;
+
+    for (const handle of handlePool) {
+      const count = usageBucket[handle] || 0;
       if (count < minUsage) {
         minUsage = count;
-        bestHandle = h;
+        bestHandle = handle;
       }
     }
-    
+
     return bestHandle;
   };
 
   const addRelationSimple = (A,B,opts={}) => {
     const coh = cohereRelation({ aName:A, bName:B, ...opts });
+    const relKind = normalizeRelKind(coh.relKind);
     
-    // Usar setNodes para acceder al estado actual de nodos
+    // Variables para almacenar los handles seleccionados
+    let selectedSourceHandle = null;
+    let selectedTargetHandle = null;
+    let foundANode = null;
+    let foundBNode = null;
+    
+    // PASO 1: Obtener información de los nodos y preparar el edge
     setNodes(currentNodes => {
-      // Buscar las entidades en el estado ACTUAL
-      const aNode = currentNodes.find(n => norm(n?.data?.label) === norm(coh.aName));
-      const bNode = currentNodes.find(n => norm(n?.data?.label) === norm(coh.bName));
-      
-      if (!aNode || !bNode) {
+      foundANode = currentNodes.find(n => norm(n?.data?.label) === norm(coh.aName));
+      foundBNode = currentNodes.find(n => norm(n?.data?.label) === norm(coh.bName));
+
+      if (!foundANode || !foundBNode) {
         console.warn(`[useIA] No se puede crear relación: entidad no encontrada (${coh.aName} → ${coh.bName})`);
         console.log(`[useIA] Entidades disponibles:`, currentNodes.map(n => n.data?.label));
-        return currentNodes; // No modificar nodos
+        return currentNodes;
       }
+
+      // Pre-calcular handles libres
+      selectedSourceHandle = findFreeHandle(foundANode.id, "source", currentNodes);
+      selectedTargetHandle = findFreeHandle(foundBNode.id, "target", currentNodes);
       
-      // Verificar duplicados en el estado actual de edges
-      setEdges(currentEdges => {
-        const alreadyExists = currentEdges.some(e => {
-          const sameDirection = e.source === aNode.id && e.target === bNode.id;
-          const reverseDirection = e.source === bNode.id && e.target === aNode.id;
-          return sameDirection || reverseDirection;
-        });
-        
-        if (alreadyExists) {
-          console.warn(`[useIA] Relación duplicada ignorada: ${coh.aName} ↔ ${coh.bName}`);
-          return currentEdges; // No modificar edges
-        }
-        
-        // Encontrar handles libres
-        const sourceHandle = findFreeHandle(aNode.id, "source", currentNodes);
-        const targetHandle = findFreeHandle(bNode.id, "target", currentNodes);
-        
-        const id = "e" + Date.now() + Math.random().toString(36).slice(2,5);
-        const newEdge = {
-          id,
-          source: aNode.id,
-          target: bNode.id,
-          sourceHandle,
-          targetHandle,
-          type: "uml",
-          data: {
-            mA: normalizeMultiplicity(coh.mA),
-            mB: normalizeMultiplicity(coh.mB),
-            verb: coh.verb || "",
-            relType: opts.relType,
-            relKind: coh.relKind || "ASSOC",
-            owning: coh.owning,
-            direction: coh.direction
-          }
-        };
-        
-        console.log(`[useIA] ✓ Relación creada: ${coh.aName} → ${coh.bName}`);
-        return currentEdges.concat(newEdge);
+      return currentNodes; // No modificar aún
+    });
+    
+    // Si no se encontraron los nodos, salir
+    if (!foundANode || !foundBNode) return;
+    
+    // PASO 2: Crear el edge PRIMERO
+    setEdges(currentEdges => {
+      const alreadyExists = currentEdges.some(e => {
+        const sameDirection = e.source === foundANode.id && e.target === foundBNode.id;
+        const reverseDirection = e.source === foundBNode.id && e.target === foundANode.id;
+        return sameDirection || reverseDirection;
       });
+
+      if (alreadyExists) {
+        console.warn(`[useIA] Relación duplicada ignorada: ${coh.aName} ↔ ${coh.bName}`);
+        return currentEdges;
+      }
+
+      const id = "e" + Date.now() + Math.random().toString(36).slice(2, 5);
+      const newEdge = {
+        id,
+        source: foundANode.id,
+        target: foundBNode.id,
+        sourceHandle: selectedSourceHandle,
+        targetHandle: selectedTargetHandle,
+        type: "uml",
+        data: {
+          mA: normalizeMultiplicity(coh.mA),
+          mB: normalizeMultiplicity(coh.mB),
+          verb: coh.verb || "",
+          relType: opts.relType,
+          relKind,
+          owning: coh.owning,
+          direction: coh.direction,
+        },
+      };
+
+      console.log(`[useIA] ✅ Edge creado:`, newEdge);
+      const updatedEdges = currentEdges.concat(newEdge);
+      console.log(`[useIA] 📊 Total edges después de agregar:`, updatedEdges.length);
       
-      // Actualizar contadores de uso de handles
+      // CRÍTICO: Guardar inmediatamente después de crear el edge
+      setTimeout(() => scheduleSnapshot(), 50);
+      
+      return updatedEdges;
+    });
+
+    // PASO 3: Actualizar contadores de uso de handles en los nodos
+    setNodes(currentNodes => {
       return currentNodes.map(n => {
-        if (n.id === aNode.id) {
+        if (n.id === foundANode.id) {
           const usage = n.data?.usage || { target: {}, source: {} };
-          const sourceHandle = findFreeHandle(aNode.id, "source", currentNodes);
           return {
             ...n,
             data: {
@@ -176,14 +226,15 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
                 ...usage,
                 source: {
                   ...usage.source,
-                  [sourceHandle]: (usage.source?.[sourceHandle] || 0) + 1
-                }
-              }
-            }
+                  [selectedSourceHandle]: (usage.source?.[selectedSourceHandle] || 0) + 1,
+                },
+              },
+            },
           };
-        } else if (n.id === bNode.id) {
+        }
+
+        if (n.id === foundBNode.id) {
           const usage = n.data?.usage || { target: {}, source: {} };
-          const targetHandle = findFreeHandle(bNode.id, "target", currentNodes);
           return {
             ...n,
             data: {
@@ -192,12 +243,13 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
                 ...usage,
                 target: {
                   ...usage.target,
-                  [targetHandle]: (usage.target?.[targetHandle] || 0) + 1
-                }
-              }
-            }
+                  [selectedTargetHandle]: (usage.target?.[selectedTargetHandle] || 0) + 1,
+                },
+              },
+            },
           };
         }
+
         return n;
       });
     });
@@ -226,8 +278,8 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
         
         // Inicializar usage para la tabla intermedia
         const initialUsage = {
-          target: { tl:0, l1:0, l2:0, bl:0, t1:0, t2:0, t3:0, t4:0, tr:0, r1:0, r2:0, br:0 },
-          source: { tl2:0, l3:0, l4:0, bl2:0, b1:0, b2:0, b3:0, b4:0, tr2:0, r3:0, r4:0, br2:0 }
+          target: Object.fromEntries(TARGET_HANDLES.map(h => [h, 0])),
+          source: Object.fromEntries(SOURCE_HANDLES.map(h => [h, 0])),
         };
         
         // Crear la tabla intermedia
@@ -264,35 +316,43 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
             sourceHandle: handleA,
             targetHandle: handleJ1,
             label: '1..*',
-            type: 'custom',
+            type: 'uml',
             data: { mA:"1..*", mB:"1", relKind:"ASSOC", relType:"1-N" }
           };
 
           // Actualizar usage
-          setNodes(updatedNodes => 
+          setNodes(updatedNodes =>
             updatedNodes.map(n => {
               if (n.id === aNode.id) {
+                const usage = n.data?.usage || { target: {}, source: {} };
                 return {
                   ...n,
                   data: {
                     ...n.data,
                     usage: {
-                      ...n.data.usage,
-                      source: { ...n.data.usage.source, [handleA]: (n.data.usage.source[handleA] || 0) + 1 }
-                    }
-                  }
+                      ...usage,
+                      source: {
+                        ...usage.source,
+                        [handleA]: (usage.source?.[handleA] || 0) + 1,
+                      },
+                    },
+                  },
                 };
               }
               if (n.id === joinId) {
+                const usage = n.data?.usage || { target: {}, source: {} };
                 return {
                   ...n,
                   data: {
                     ...n.data,
                     usage: {
-                      ...n.data.usage,
-                      target: { ...n.data.usage.target, [handleJ1]: (n.data.usage.target[handleJ1] || 0) + 1 }
-                    }
-                  }
+                      ...usage,
+                      target: {
+                        ...usage.target,
+                        [handleJ1]: (usage.target?.[handleJ1] || 0) + 1,
+                      },
+                    },
+                  },
                 };
               }
               return n;
@@ -323,35 +383,43 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
             sourceHandle: handleB,
             targetHandle: handleJ2,
             label: '1..*',
-            type: 'custom',
+            type: 'uml',
             data: { mA:"1..*", mB:"1", relKind:"ASSOC", relType:"1-N" }
           };
 
           // Actualizar usage
-          setNodes(updatedNodes => 
+          setNodes(updatedNodes =>
             updatedNodes.map(n => {
               if (n.id === bNode.id) {
+                const usage = n.data?.usage || { target: {}, source: {} };
                 return {
                   ...n,
                   data: {
                     ...n.data,
                     usage: {
-                      ...n.data.usage,
-                      source: { ...n.data.usage.source, [handleB]: (n.data.usage.source[handleB] || 0) + 1 }
-                    }
-                  }
+                      ...usage,
+                      source: {
+                        ...usage.source,
+                        [handleB]: (usage.source?.[handleB] || 0) + 1,
+                      },
+                    },
+                  },
                 };
               }
               if (n.id === joinId) {
+                const usage = n.data?.usage || { target: {}, source: {} };
                 return {
                   ...n,
                   data: {
                     ...n.data,
                     usage: {
-                      ...n.data.usage,
-                      target: { ...n.data.usage.target, [handleJ2]: (n.data.usage.target[handleJ2] || 0) + 1 }
-                    }
-                  }
+                      ...usage,
+                      target: {
+                        ...usage.target,
+                        [handleJ2]: (usage.target?.[handleJ2] || 0) + 1,
+                      },
+                    },
+                  },
                 };
               }
               return n;
@@ -387,34 +455,42 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
           sourceHandle: handleA,
           targetHandle: handleJ1,
           label: '1..*',
-          type: 'custom',
+          type: 'uml',
           data: { mA:"1..*", mB:"1", relKind:"ASSOC", relType:"1-N" }
         };
 
-        setNodes(updatedNodes => 
+        setNodes(updatedNodes =>
           updatedNodes.map(n => {
             if (n.id === aNode.id) {
+              const usage = n.data?.usage || { target: {}, source: {} };
               return {
                 ...n,
                 data: {
                   ...n.data,
                   usage: {
-                    ...n.data.usage,
-                    source: { ...n.data.usage.source, [handleA]: (n.data.usage.source[handleA] || 0) + 1 }
-                  }
-                }
+                    ...usage,
+                    source: {
+                      ...usage.source,
+                      [handleA]: (usage.source?.[handleA] || 0) + 1,
+                    },
+                  },
+                },
               };
             }
             if (n.id === joinId) {
+              const usage = n.data?.usage || { target: {}, source: {} };
               return {
                 ...n,
                 data: {
                   ...n.data,
                   usage: {
-                    ...n.data.usage,
-                    target: { ...n.data.usage.target, [handleJ1]: (n.data.usage.target[handleJ1] || 0) + 1 }
-                  }
-                }
+                    ...usage,
+                    target: {
+                      ...usage.target,
+                      [handleJ1]: (usage.target?.[handleJ1] || 0) + 1,
+                    },
+                  },
+                },
               };
             }
             return n;
@@ -446,34 +522,42 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
           sourceHandle: handleB,
           targetHandle: handleJ2,
           label: '1..*',
-          type: 'custom',
+          type: 'uml',
           data: { mA:"1..*", mB:"1", relKind:"ASSOC", relType:"1-N" }
         };
 
-        setNodes(updatedNodes => 
+        setNodes(updatedNodes =>
           updatedNodes.map(n => {
             if (n.id === bNode.id) {
+              const usage = n.data?.usage || { target: {}, source: {} };
               return {
                 ...n,
                 data: {
                   ...n.data,
                   usage: {
-                    ...n.data.usage,
-                    source: { ...n.data.usage.source, [handleB]: (n.data.usage.source[handleB] || 0) + 1 }
-                  }
-                }
+                    ...usage,
+                    source: {
+                      ...usage.source,
+                      [handleB]: (usage.source?.[handleB] || 0) + 1,
+                    },
+                  },
+                },
               };
             }
             if (n.id === joinId) {
+              const usage = n.data?.usage || { target: {}, source: {} };
               return {
                 ...n,
                 data: {
                   ...n.data,
                   usage: {
-                    ...n.data.usage,
-                    target: { ...n.data.usage.target, [handleJ2]: (n.data.usage.target[handleJ2] || 0) + 1 }
-                  }
-                }
+                    ...usage,
+                    target: {
+                      ...usage.target,
+                      [handleJ2]: (usage.target?.[handleJ2] || 0) + 1,
+                    },
+                  },
+                },
               };
             }
             return n;
@@ -533,7 +617,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
           break;
         }
         case "add_relation": {
-          act.relKind = (act.relKind || "ASSOC").toUpperCase();
+          act.relKind = normalizeRelKind(act.relKind);
           act.mA = normalizeMultiplicity(act.mA);
           act.mB = normalizeMultiplicity(act.mB);
           if (act.owning && !["A","B"].includes(act.owning)) act.owning = "A";
@@ -704,12 +788,15 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
         // Pequeño delay adicional para que React actualice los edges también
         setTimeout(() => {
           setNodes(currentNodes => {
-            setEdges(currentEdges => currentEdges); // Trigger para actualizar edges
-            
-            // Aplicar layout con los edges actualizados
-            const layouted = applyAutoLayout(currentNodes, edges);
-            const optimized = optimizeEdgeCrossings(layouted);
-            return optimized;
+            // Obtener edges actualizados del estado
+            setEdges(currentEdges => {
+              // Aplicar layout con los edges actualizados
+              const layouted = applyAutoLayout(currentNodes, currentEdges);
+              const optimized = optimizeEdgeCrossings(layouted);
+              setNodes(optimized); // Actualizar nodos con layout
+              return currentEdges; // Mantener edges sin cambios
+            });
+            return currentNodes; // No modificar nodes aquí, se hará dentro de setEdges
           });
         }, 150);
       }

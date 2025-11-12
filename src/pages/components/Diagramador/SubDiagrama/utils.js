@@ -261,12 +261,21 @@ export const calculateHandleUsage = (nodeId, edges) => {
  */
 export const findBestHandle = (nodeId, edges, isSource) => {
   if (!nodeId || !Array.isArray(edges)) {
-    return isSource ? SOURCE_HANDLES[0] : TARGET_HANDLES[0];
+    const defaultHandle = isSource ? SOURCE_HANDLES[0] : TARGET_HANDLES[0];
+    console.log("⚠️ findBestHandle: parámetros inválidos, usando default:", defaultHandle);
+    return defaultHandle;
   }
   
   const usage = calculateHandleUsage(nodeId, edges);
   const handleList = isSource ? SOURCE_HANDLES : TARGET_HANDLES;
   const usageMap = isSource ? usage.source : usage.target;
+
+  console.log("🔍 findBestHandle:", {
+    nodeId,
+    isSource,
+    handleList: handleList.slice(0, 3) + "...", // Muestra los primeros 3
+    usageMap
+  });
 
   // Busca el handle con menor uso
   let bestHandle = handleList[0];
@@ -279,6 +288,8 @@ export const findBestHandle = (nodeId, edges, isSource) => {
       bestHandle = handle;
     }
   });
+
+  console.log("✅ Handle seleccionado:", bestHandle, "con uso:", minUsage);
 
   return bestHandle;
 };

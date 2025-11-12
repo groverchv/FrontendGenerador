@@ -15,13 +15,15 @@ export default function RelacionHistorial({
     k === "COMP" ? "Composición ◆" :
     k === "AGGR" ? "Agregación ◇" :
     k === "INHERIT" ? "Herencia △" :
-    k === "DEPEND" ? "Dependencia - ->" : "Asociación →";
+    k === "DEPEND" ? "Dependencia - ->" :
+    k === "ASSOC" ? "Asociación →" : "Asociación →";
 
   const relKindColor = (k) =>
     k === "COMP" ? "bg-red-100 text-red-800 border-red-300" :
     k === "AGGR" ? "bg-orange-100 text-orange-800 border-orange-300" :
     k === "INHERIT" ? "bg-purple-100 text-purple-800 border-purple-300" :
-    k === "DEPEND" ? "bg-blue-100 text-blue-800 border-blue-300" : "bg-green-100 text-green-800 border-green-300";
+    k === "DEPEND" ? "bg-blue-100 text-blue-800 border-blue-300" :
+    k === "ASSOC" ? "bg-green-100 text-green-800 border-green-300" : "bg-gray-100 text-gray-800 border-gray-300";
 
   return (
     <div className="space-y-3">

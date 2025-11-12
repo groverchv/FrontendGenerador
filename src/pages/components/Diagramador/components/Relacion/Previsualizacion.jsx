@@ -41,7 +41,8 @@ export default function Previsualizacion({
   }, [bId, nameOverrides, nodes]);
 
   const _joinName = useMemo(() => {
-    if (!(isNM && kind === "ASSOCIATION")) return "";
+    const isAssoc = kind === "ASSOCIATION" || kind === "ASSOC";
+    if (!(isNM && isAssoc)) return "";
     const base = joinName && joinName.trim()
       ? joinName.trim()
       : suggestJoinName(aName, bName);
@@ -70,22 +71,20 @@ export default function Previsualizacion({
 
   const hasSelection = aId && bId;
 
+  // Normalizar tipo de relación (soportar ambos formatos)
+  const normalizedKind = 
+    kind === "ASSOC" ? "ASSOCIATION" :
+    kind === "AGGR" ? "AGGREGATION" :
+    kind === "COMP" ? "COMPOSITION" :
+    kind === "INHERIT" ? "INHERITANCE" :
+    kind === "DEPEND" ? "DEPENDENCY" : kind;
+
   // Marcadores
   const markerForDependency = "url(#arrow)";
   const markerTriangle = "url(#triangle)";
   const markerDiamondHollow = "url(#diamondHollow)";
   const markerDiamondFilled = "url(#diamondFilled)";
-  const lineStrokeDash = kind === "DEPENDENCY" ? "6,6" : undefined;
-
-  const aggrCompMarkerStart =
-    (kind === "AGGREGATION" || kind === "COMPOSITION") && ownerSide === "A"
-      ? (kind === "AGGREGATION" ? markerDiamondHollow : markerDiamondFilled)
-      : null;
-
-  const aggrCompMarkerEnd =
-    (kind === "AGGREGATION" || kind === "COMPOSITION") && ownerSide === "B"
-      ? (kind === "AGGREGATION" ? markerDiamondHollow : markerDiamondFilled)
-      : null;
+  const lineStrokeDash = normalizedKind === "DEPENDENCY" ? "6,6" : undefined;
 
   const inhMarkerStart = superEnd === "A" ? markerTriangle : null;
   const inhMarkerEnd = superEnd === "B" ? markerTriangle : null;
@@ -96,6 +95,11 @@ export default function Previsualizacion({
     COMPOSITION: { text: "Composición", emoji: "◆" },
     INHERITANCE: { text: "Herencia", emoji: "▲" },
     DEPENDENCY: { text: "Dependencia", emoji: "➜" },
+    ASSOC: { text: "Asociación", emoji: "🔗" },
+    AGGR: { text: "Agregación", emoji: "◇" },
+    COMP: { text: "Composición", emoji: "◆" },
+    INHERIT: { text: "Herencia", emoji: "▲" },
+    DEPEND: { text: "Dependencia", emoji: "➜" },
   };
 
   return (
@@ -154,7 +158,7 @@ export default function Previsualizacion({
             </text>
 
             {/* Conectores según tipo */}
-            {kind === "ASSOCIATION" && (!_joinName ? (
+            {normalizedKind === "ASSOCIATION" && (!_joinName ? (
               <>
                 <line x1={leftLineStart.x} y1={leftLineStart.y} x2={rightLineEnd.x} y2={rightLineEnd.y} stroke="#94a3b8" strokeWidth="2" />
                 <text x={leftLineStart.x - 6} y={leftLineStart.y - 8} textAnchor="end" fontSize="11" fill="#334155">{mA}</text>
@@ -183,14 +187,14 @@ export default function Previsualizacion({
               </>
             ))}
 
-            {(kind === "AGGREGATION" || kind === "COMPOSITION") && (
+            {(normalizedKind === "AGGREGATION" || normalizedKind === "COMPOSITION") && (
               <>
                 <line
                   x1={leftLineStart.x} y1={leftLineStart.y}
                   x2={rightLineEnd.x} y2={rightLineEnd.y}
                   stroke="#94a3b8" strokeWidth="2"
-                  markerStart={ownerSide === "A" ? (kind === "AGGREGATION" ? markerDiamondHollow : markerDiamondFilled) : null}
-                  markerEnd={ownerSide === "B" ? (kind === "AGGREGATION" ? markerDiamondHollow : markerDiamondFilled) : null}
+                  markerStart={ownerSide === "A" ? (normalizedKind === "AGGREGATION" ? markerDiamondHollow : markerDiamondFilled) : null}
+                  markerEnd={ownerSide === "B" ? (normalizedKind === "AGGREGATION" ? markerDiamondHollow : markerDiamondFilled) : null}
                 />
                 <text x={leftLineStart.x - 6} y={leftLineStart.y - 8} textAnchor="end" fontSize="11" fill="#334155">{mA}</text>
                 <text x={rightLineEnd.x + 6} y={rightLineEnd.y - 8} textAnchor="start" fontSize="11" fill="#334155">{mB}</text>
@@ -202,7 +206,7 @@ export default function Previsualizacion({
               </>
             )}
 
-            {kind === "INHERITANCE" && (
+            {normalizedKind === "INHERITANCE" && (
               <>
                 <line
                   x1={leftLineStart.x} y1={leftLineStart.y}
@@ -217,7 +221,7 @@ export default function Previsualizacion({
               </>
             )}
 
-            {kind === "DEPENDENCY" && (
+            {normalizedKind === "DEPENDENCY" && (
               <>
                 <line
                   x1={leftLineStart.x} y1={leftLineStart.y}

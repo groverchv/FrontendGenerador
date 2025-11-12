@@ -140,14 +140,67 @@ const IAController = forwardRef(function IAController(
   // usa pickHandle para asignar puertos libres
   const addEdgeSimple = useCallback(
     (aId, bId, mA, mB, verb, meta = {}) => {
-      const relType = decideRelType(mA, mB);
-      setEdges((es) => {
-        const A = nodes.find((n) => n.id === aId);
-        const B = nodes.find((n) => n.id === bId);
-        const sourceHandle = pickHandle(A, B, es);
-        const targetHandle = pickHandle(B, A, es);
+      const relKind = meta.relKind || "ASSOC";
+      
+      // Herencia y Dependencia NO usan multiplicidades
+      const needsMultiplicity = relKind !== "INHERIT" && relKind !== "DEPEND";
+      const relType = needsMultiplicity ? decideRelType(mA, mB) : undefined;
+      
+      // Usar setEdges con callback para tener acceso al estado actual de edges
+      setEdges((currentEdges) => {
+        // Usar setNodes callback para obtener nodos actualizados
+        let sourceHandle, targetHandle;
+        
+        setNodes((currentNodes) => {
+          const A = currentNodes.find((n) => n.id === aId);
+          const B = currentNodes.find((n) => n.id === bId);
+          
+          // Validar que ambos nodos existan antes de crear la relación
+          if (!A || !B) {
+            console.error("⚠️ No se puede crear relación: nodo no encontrado", { 
+              aId, 
+              bId, 
+              encontrados: { A: !!A, B: !!B }
+            });
+            return currentNodes; // Sin cambios en nodos
+          }
+          
+          sourceHandle = pickHandle(A, B, currentEdges);
+          targetHandle = pickHandle(B, A, currentEdges);
+          
+          return currentNodes; // Sin cambios en nodos
+        });
+        
+        // Si no se pudieron determinar los handles, no crear la relación
+        if (!sourceHandle || !targetHandle) {
+          console.error("⚠️ No se pudieron determinar handles para la relación");
+          return currentEdges;
+        }
+        
         const id = "e" + Date.now() + Math.random().toString(36).slice(2, 6);
-        return es.concat({
+        
+        const edgeData = {
+          verb: verb || "",
+          relKind, // ✅ Asegurar que relKind siempre esté presente
+          direction: meta.direction || "A->B",
+          ...meta,
+        };
+        
+        // Solo agregar multiplicidades si el tipo de relación las soporta
+        if (needsMultiplicity) {
+          edgeData.mA = normalizeMult(mA);
+          edgeData.mB = normalizeMult(mB);
+          edgeData.relType = relType;
+        }
+        
+        console.log("✅ Relación creada:", { 
+          id, 
+          tipo: relKind,
+          desde: aId,
+          hasta: bId
+        });
+        
+        const newEdge = {
           id,
           source: aId,
           target: bId,
@@ -155,17 +208,16 @@ const IAController = forwardRef(function IAController(
           targetHandle,
           type: "uml",
           label: verb || "",
-          data: {
-            mA: normalizeMult(mA),
-            mB: normalizeMult(mB),
-            verb: verb || "",
-            relType,
-            ...meta,
-          },
-        });
+          data: edgeData,
+        };
+        
+        return currentEdges.concat(newEdge);
       });
+      
+      // Hacer snapshot después de crear la relación
+      scheduleSnapshot();
     },
-    [nodes, setEdges]
+    [setEdges, setNodes, scheduleSnapshot]
   );
 
   const removeRelationByNames = useCallback(
@@ -212,22 +264,28 @@ const IAController = forwardRef(function IAController(
 
   const applyActions = useCallback(
     (actions = []) => {
-      for (const act of actions) {
-        if (!act?.op) continue;
-
+      if (!Array.isArray(actions) || actions.length === 0) return;
+      
+      // 🔹 FASE 1: Separar operaciones por tipo
+      const entityOps = actions.filter(act => 
+        act?.op && ['add_entity', 'update_entity', 'add_attr', 'rename_entity'].includes(act.op)
+      );
+      
+      const removeEntityOps = actions.filter(act => act?.op === 'remove_entity');
+      
+      const relationOps = actions.filter(act => 
+        act?.op && ['add_relation', 'remove_relation', 'add_relation_nm'].includes(act.op)
+      );
+      
+      console.log("📊 IA: Procesando", {
+        entidades: entityOps.length,
+        relaciones: relationOps.length
+      });
+      
+      // Crear/actualizar entidades primero (SINCRONO)
+      for (const act of entityOps) {
         if (act.op === "add_entity") ensureEntity(act.name, act.attrs || []);
         if (act.op === "update_entity") ensureEntity(act.name, act.attrs || []);
-        if (act.op === "remove_entity") {
-          const ex = nodes.find(
-            (n) =>
-              (n.data?.label || "").toLowerCase() ===
-              String(act.name).toLowerCase()
-          );
-          if (ex) {
-            setNodes((ns) => ns.filter((n) => n.id !== ex.id));
-            setEdges((es) => es.filter((e) => e.source !== ex.id && e.target !== ex.id));
-          }
-        }
         if (act.op === "add_attr") ensureEntity(act.entity, [act.attr]);
         if (act.op === "rename_entity") {
           const ex = nodes.find(
@@ -243,23 +301,87 @@ const IAController = forwardRef(function IAController(
             );
           }
         }
-        if (act.op === "add_relation") {
-          const aId = ensureEntity(act.a);
-          const bId = ensureEntity(act.b);
-          addEdgeSimple(aId, bId, act.mA || "1", act.mB || "1", act.verb || "", {
-            relKind: act.relKind || "ASSOC",
-            direction: act.direction || "A->B",
-            owning: act.owning || "A",
-          });
+      }
+      
+      // 🔹 FASE 2: Procesar relaciones usando setNodes callback para asegurar nodos actualizados
+      setNodes((currentNodes) => {
+        // Procesar relaciones con los nodos actualizados
+        for (const act of relationOps) {
+          if (act.op === "add_relation") {
+            // Buscar nodos en el estado actualizado
+            const nodeA = currentNodes.find(
+              (n) => (n.data?.label || "").toLowerCase() === String(act.a).toLowerCase()
+            );
+            const nodeB = currentNodes.find(
+              (n) => (n.data?.label || "").toLowerCase() === String(act.b).toLowerCase()
+            );
+            
+            if (!nodeA || !nodeB) {
+              console.error("⚠️ Entidades no encontradas:", { 
+                buscando: { a: act.a, b: act.b },
+                encontrados: { a: !!nodeA, b: !!nodeB }
+              });
+              continue;
+            }
+            
+            const relKind = act.relKind || "ASSOC";
+            
+            console.log("🔗 Creando relación:", { 
+              tipo: relKind,
+              desde: nodeA.data.label,
+              hasta: nodeB.data.label
+            });
+            
+            // Construir metadata según el tipo de relación
+            const meta = {
+              relKind,
+              direction: act.direction || "A->B",
+            };
+            
+            // Solo agregar owning si es Agregación o Composición
+            if (relKind === "AGGR" || relKind === "COMP") {
+              meta.owning = act.owning || "A";
+            }
+            
+            // Herencia y Dependencia no usan multiplicidades
+            const mA = (relKind === "INHERIT" || relKind === "DEPEND") ? undefined : (act.mA || "1");
+            const mB = (relKind === "INHERIT" || relKind === "DEPEND") ? undefined : (act.mB || "1");
+            
+            addEdgeSimple(nodeA.id, nodeB.id, mA, mB, act.verb || "", meta);
+          }
+          if (act.op === "remove_relation") removeRelationByNames(act.a, act.b);
+          if (act.op === "add_relation_nm") {
+            const nodeA = currentNodes.find(
+              (n) => (n.data?.label || "").toLowerCase() === String(act.a).toLowerCase()
+            );
+            const nodeB = currentNodes.find(
+              (n) => (n.data?.label || "").toLowerCase() === String(act.b).toLowerCase()
+            );
+            if (nodeA && nodeB) {
+              addRelationNM(nodeA.id, nodeB.id, act.joinName);
+            }
+          }
         }
-        if (act.op === "remove_relation") removeRelationByNames(act.a, act.b);
-        if (act.op === "add_relation_nm") {
-          const aId = ensureEntity(act.a);
-          const bId = ensureEntity(act.b);
-          addRelationNM(aId, bId, act.joinName);
+        
+        // Retornar los nodos sin cambios (solo usamos esto para leer el estado actualizado)
+        return currentNodes;
+      });
+      
+      // 🔹 FASE 3: Eliminar entidades al final
+      for (const act of removeEntityOps) {
+        const ex = nodes.find(
+          (n) =>
+            (n.data?.label || "").toLowerCase() ===
+            String(act.name).toLowerCase()
+        );
+        if (ex) {
+          setNodes((ns) => ns.filter((n) => n.id !== ex.id));
+          setEdges((es) => es.filter((e) => e.source !== ex.id && e.target !== ex.id));
         }
       }
-      scheduleSnapshot();
+      
+      // Snapshot después de todo
+      setTimeout(() => scheduleSnapshot(), 150);
     },
     [nodes, ensureEntity, addEdgeSimple, removeRelationByNames, addRelationNM, scheduleSnapshot, setNodes, setEdges]
   );
