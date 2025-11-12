@@ -4,12 +4,12 @@
 //   y DES-ESCAPA correctamente (sin duplicar backslashes) para que no queden \n literales.
 // - Parser local extendido: CRUD de entidades/atributos + 5 tipos de relación + clear_attrs/only id.
 
-const EMBEDDED_FALLBACK_KEY = "AIzaSyDRGJ3UXInnuy1Yu3OEw5Y6uMqeBMWLl3M";
+const EMBEDDED_FALLBACK_KEY = "AIzaSyAJZS1nVnaZa2kHEn_hL2mL0uVQn0aL3J4";
 let RUNTIME_API_KEY = "";
 let RUNTIME_MODEL  = "";
 
 /* ===================== Helpers de runtime ===================== */
-function getApiKey() {
+export function getApiKey() {
   return (
     RUNTIME_API_KEY ||
     (typeof import.meta !== "undefined" && import.meta.env?.VITE_GEMINI_API_KEY) ||
@@ -17,7 +17,7 @@ function getApiKey() {
     EMBEDDED_FALLBACK_KEY
   );
 }
-function getModel() {
+export function getModel() {
   return (
     RUNTIME_MODEL ||
     (typeof import.meta !== "undefined" && import.meta.env?.VITE_GEMINI_MODEL) ||
@@ -260,6 +260,77 @@ export async function generateDiagramDelta(promptText) {
     throw new Error("La respuesta de Gemini no contiene 'actions'.");
   }
   return parsed;
+}
+
+/**
+ * Llama a Gemini Vision API con una imagen
+ * @param {string} prompt - Texto del prompt
+ * @param {string} base64Image - Imagen en base64
+ * @param {string} mimeType - Tipo MIME de la imagen (ej: 'image/jpeg')
+ * @param {Object} options - Opciones adicionales
+ * @returns {Promise<string>} - Respuesta de Gemini
+ */
+export async function callGeminiVision(prompt, base64Image, mimeType, options = {}) {
+  const API_KEY = getApiKey();
+  const model = getModel();
+  
+  if (!API_KEY) {
+    throw new Error("Falta la API key de Gemini para procesar la imagen.");
+  }
+
+  const {
+    maxOutputTokens = 8000,
+    temperature = 0.1,
+    topP = 0.8,
+    topK = 32,
+    responseMimeType = "application/json"
+  } = options;
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(API_KEY)}`;
+  
+  const requestBody = {
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          {
+            inline_data: {
+              mime_type: mimeType,
+              data: base64Image
+            }
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      temperature,
+      topP,
+      topK,
+      maxOutputTokens,
+      responseMimeType
+    }
+  };
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(`Error de Gemini Vision API ${response.status}: ${errorText || response.statusText}`);
+  }
+
+  const data = await response.json();
+  const rawText = data?.candidates?.[0]?.content?.parts?.map(p => p?.text ?? "").join("\n") ?? "";
+
+  if (!rawText) {
+    throw new Error("No se recibió respuesta válida de Gemini Vision API");
+  }
+
+  return rawText;
 }
 
 export async function getDeltaFromUserText({ text, promptBuilder, currentModel }) {

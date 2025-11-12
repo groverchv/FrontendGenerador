@@ -51,6 +51,11 @@ CONVENCIONES DE NOMBRES (OBLIGATORIO)
 ARCHIVOS A GENERAR (OBLIGATORIO)
 ────────────────────────────────────────────────────────────────────────
 
+IMPORTANTE: Debes generar archivos para TODAS las entidades del modelo, incluyendo:
+- Entidades principales
+- Tablas intermedias (join tables) de relaciones N-M
+- Total: Generar exactamente tantas vistas como entidades existan en el modelo
+
 [1] lib/main.dart:
 - import 'package:flutter/material.dart';
 - import 'package:get/get.dart';
@@ -75,6 +80,10 @@ ARCHIVOS A GENERAR (OBLIGATORIO)
   * Manejo de errores y parseo JSON
 
 [3] lib/data/models/<entity>_model.dart (POR CADA ENTIDAD):
+CRÍTICO: Genera un modelo para CADA entidad del diagrama, incluyendo:
+- Entidades principales (Usuario, Producto, Categoria, etc.)
+- Tablas intermedias de relaciones N-M (Producto_Catalogo, Usuario_Rol, etc.)
+
 - class <Entity>Model con:
   * Atributos según el diagrama UML
   * Constructor con named parameters
@@ -83,6 +92,9 @@ ARCHIVOS A GENERAR (OBLIGATORIO)
   * Relaciones como listas o referencias
 
 [4] lib/data/services/<entity>_service.dart (POR CADA ENTIDAD):
+CRÍTICO: Genera un servicio para CADA entidad del diagrama, incluyendo tablas intermedias.
+Las tablas intermedias también necesitan CRUD completo.
+
 - import '../api/api_client.dart';
 - import '../models/<entity>_model.dart';
 - class <Entity>Service:
@@ -103,6 +115,8 @@ CRÍTICO - RUTAS API (SIEMPRE EN MINÚSCULA):
 - Ejemplo: "Detalle Venta" → ruta "detalleventa"
 
 [5] lib/ui/controllers/<entity>_controller.dart (POR CADA ENTIDAD):
+CRÍTICO: Genera un controlador para CADA entidad, incluyendo tablas intermedias.
+
 - import 'package:get/get.dart';
 - import '../../data/models/<entity>_model.dart';
 - import '../../data/services/<entity>_service.dart';
@@ -134,6 +148,9 @@ CRÍTICO - RUTAS API (SIEMPRE EN MINÚSCULA):
       * Text("Selecciona una opción del menú", style: TextStyle(fontSize: 16, color: Colors.grey))
 
 [7] lib/ui/pages/<entity>_list_page.dart (POR CADA ENTIDAD):
+CRÍTICO: Genera una página de lista para CADA entidad, incluyendo tablas intermedias.
+Cada entidad debe tener su propia vista de lista con CRUD completo.
+
 - import 'package:flutter/material.dart';
 - import 'package:get/get.dart';
 - import '../controllers/<entity>_controller.dart';
@@ -148,6 +165,9 @@ CRÍTICO - RUTAS API (SIEMPRE EN MINÚSCULA):
     - IconButton para eliminar
 
 [8] lib/ui/widgets/global/main_sidebar.dart:
+CRÍTICO: El menú lateral debe incluir TODAS las entidades del modelo.
+Si hay 6 entidades en el diagrama, debe haber 6 opciones en el menú.
+
 - import 'package:flutter/material.dart';
 - import 'package:get/get.dart';
 - import '../../../routes/app_routes.dart';
@@ -156,8 +176,12 @@ CRÍTICO - RUTAS API (SIEMPRE EN MINÚSCULA):
   * ListTile para Home
   * Divider
   * ListTile por cada entidad navegando a su página de lista
+  * INCLUIR tablas intermedias (Producto_Catalogo, etc.)
 
 [9] lib/ui/widgets/local/<entity>_form.dart (POR CADA ENTIDAD):
+CRÍTICO: Genera un formulario para CADA entidad, incluyendo tablas intermedias.
+Las tablas intermedias necesitan formularios para gestionar las relaciones.
+
 - import 'package:flutter/material.dart';
 - import 'package:get/get.dart';
 - import '../../controllers/<entity>_controller.dart';
@@ -169,12 +193,18 @@ CRÍTICO - RUTAS API (SIEMPRE EN MINÚSCULA):
   * Llamadas al controller para create/update
 
 [10] lib/routes/app_routes.dart:
+CRÍTICO: Define una ruta para CADA entidad.
+Si hay 6 entidades, debe haber al menos 7 rutas (HOME + 6 entidades).
+
 - abstract class AppRoutes:
   * static const HOME = '/';
   * static const <ENTITY>_LIST = '/<entity-kebab-case>-list';
-  * Una constante por cada entidad
+  * Una constante por cada entidad (incluyendo tablas intermedias)
 
 [11] lib/routes/app_pages.dart:
+CRÍTICO: Define una página GetX para CADA entidad con su binding.
+Si hay 6 entidades, debe haber 7 páginas (HomePage + 6 páginas de entidades).
+
 - import 'package:get/get.dart';
 - import '../ui/pages/home_page.dart';
 - import '../ui/pages/<entity>_list_page.dart';
@@ -190,7 +220,7 @@ CRÍTICO - RUTAS API (SIEMPRE EN MINÚSCULA):
           Get.lazyPut(() => <Entity>Controller());
         }),
       ),
-      ... para cada entidad
+      ... para cada entidad (incluyendo tablas intermedias)
     ];
 
 [12] pubspec.yaml:
@@ -214,8 +244,11 @@ flutter:
 ────────────────────────────────────────────────────────────────────────
 REGLAS PARA LOS MODELOS
 ────────────────────────────────────────────────────────────────────────
+CRÍTICO: Por cada clase del diagrama UML (incluyendo tablas intermedias), crear un <Entity>Model
+
 1) Por cada clase del diagrama UML, crear un <Entity>Model
-2) Atributos según el diagrama con tipos Dart apropiados:
+2) INCLUIR tablas intermedias de relaciones N-M como entidades completas
+3) Atributos según el diagrama con tipos Dart apropiados:
    - String, int, double, bool, DateTime
 3) Constructor con named parameters opcionales
 4) fromJson y toJson para serialización
@@ -257,9 +290,11 @@ RECUERDA:
 - TODOS los archivos deben estar completos y funcionales
 - El código debe compilar sin errores
 - La app debe mostrar "Bienvenido a ${projectName}" al iniciar
-- CRUD completo para cada entidad
+- CRUD completo para CADA entidad (incluyendo tablas intermedias)
 - Navegación funcional con GetX
 - Integración con backend en ${backendUrl}/api
+- **CRÍTICO**: Si hay 6 entidades en el modelo, genera 6 vistas completas
+- **CRÍTICO**: Las tablas intermedias también necesitan vistas de gestión
 - **CRÍTICO**: Rutas API SIEMPRE en minúscula
   
 EJEMPLOS DE RUTAS CORRECTAS EN SERVICES:

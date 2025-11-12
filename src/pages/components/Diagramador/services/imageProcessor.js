@@ -1,29 +1,11 @@
 // src/pages/components/Diagramador/services/imageProcessor.js
 // Servicio para procesar imágenes de clases UML usando Gemini Vision API
 
-// Obtener las funciones de configuración de Gemini desde apiGemine.js
-let RUNTIME_API_KEY = "";
-let RUNTIME_MODEL = "";
+// Importar funciones de la API centralizada
+import { callGeminiVision, setGeminiApiKey, setGeminiModel } from "./apiGemine";
 
-function getApiKey() {
-  return (
-    RUNTIME_API_KEY ||
-    (typeof import.meta !== "undefined" && import.meta.env?.VITE_GEMINI_API_KEY) ||
-    (typeof window !== "undefined" && window.GEMINI_API_KEY) ||
-    "AIzaSyDRGJ3UXInnuy1Yu3OEw5Y6uMqeBMWLl3M" // fallback key
-  );
-}
-
-function getModel() {
-  return (
-    RUNTIME_MODEL ||
-    (typeof import.meta !== "undefined" && import.meta.env?.VITE_GEMINI_MODEL) ||
-    "gemini-2.0-flash"
-  );
-}
-
-export function setGeminiApiKey(k) { RUNTIME_API_KEY = (k || "").trim(); }
-export function setGeminiModel(m)  { RUNTIME_MODEL  = (m || "").trim(); }
+// Re-exportar para compatibilidad con código existente
+export { setGeminiApiKey, setGeminiModel };
 
 /**
  * Convierte un archivo de imagen a base64
@@ -72,13 +54,6 @@ function getImageMimeType(file) {
  * @returns {Promise<Object>} - Objeto con las clases y relaciones extraídas
  */
 export async function processMultipleUMLClassesImage(imageFile) {
-  const API_KEY = getApiKey();
-  const model = getModel();
-  
-  if (!API_KEY) {
-    throw new Error("Falta la API key de Gemini para procesar la imagen.");
-  }
-
   try {
     // Convertir imagen a base64
     const base64Image = await fileToBase64(imageFile);
@@ -187,54 +162,14 @@ CRÍTICO:
 IMPORTANTE: Devuelve SOLO el JSON válido, sin texto adicional ni formato markdown.
 `;
 
-    // Llamada a Gemini Vision API
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(API_KEY)}`;
-    
-    const requestBody = {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: prompt
-            },
-            {
-              inline_data: {
-                mime_type: mimeType,
-                data: base64Image
-              }
-            }
-          ]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.1,
-        topP: 0.8,
-        topK: 32,
-        maxOutputTokens: 8000,
-        responseMimeType: "application/json"
-      }
-    };
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(requestBody)
+    // Llamar a la API centralizada de Gemini Vision
+    const rawText = await callGeminiVision(prompt, base64Image, mimeType, {
+      maxOutputTokens: 8000,
+      temperature: 0.1,
+      topP: 0.8,
+      topK: 32,
+      responseMimeType: "application/json"
     });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      throw new Error(`Error de Gemini API ${response.status}: ${errorText || response.statusText}`);
-    }
-
-    const data = await response.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.map(p => p?.text ?? "").join("\n") ?? "";
-
-    if (!rawText) {
-      throw new Error("No se recibió respuesta válida de Gemini Vision API");
-    }
 
     // Parsear el JSON de respuesta
     let diagramInfo;
@@ -288,13 +223,6 @@ IMPORTANTE: Devuelve SOLO el JSON válido, sin texto adicional ni formato markdo
  * @returns {Promise<Object>} - Objeto con la información de la clase extraída
  */
 export async function processUMLClassImage(imageFile) {
-  const API_KEY = getApiKey();
-  const model = getModel();
-  
-  if (!API_KEY) {
-    throw new Error("Falta la API key de Gemini para procesar la imagen.");
-  }
-
   try {
     // Convertir imagen a base64
     const base64Image = await fileToBase64(imageFile);
@@ -342,54 +270,14 @@ Instrucciones específicas:
 IMPORTANTE: Devuelve SOLO el JSON válido, sin texto adicional ni formato markdown.
 `;
 
-    // Llamada a Gemini Vision API
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(API_KEY)}`;
-    
-    const requestBody = {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: prompt
-            },
-            {
-              inline_data: {
-                mime_type: mimeType,
-                data: base64Image
-              }
-            }
-          ]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.1,
-        topP: 0.8,
-        topK: 32,
-        maxOutputTokens: 4000,
-        responseMimeType: "application/json"
-      }
-    };
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(requestBody)
+    // Llamar a la API centralizada de Gemini Vision
+    const rawText = await callGeminiVision(prompt, base64Image, mimeType, {
+      maxOutputTokens: 4000,
+      temperature: 0.1,
+      topP: 0.8,
+      topK: 32,
+      responseMimeType: "application/json"
     });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      throw new Error(`Error de Gemini API ${response.status}: ${errorText || response.statusText}`);
-    }
-
-    const data = await response.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.map(p => p?.text ?? "").join("\n") ?? "";
-
-    if (!rawText) {
-      throw new Error("No se recibió respuesta válida de Gemini Vision API");
-    }
 
     // Parsear el JSON de respuesta
     let classInfo;

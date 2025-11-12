@@ -1,8 +1,8 @@
 import axios from "axios";
-
+// https://backend-generador-full-stack.up.railway.app/
 // Permite VITE_API_BASE (existente) y VITE_API_BASE_URL (alias) con fallback a http://localhost:8080 funciona
 export const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE_URL || "http://localhost:8080");
+  (import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE_URL || "https://backend-generador-full-stack.up.railway.app");
 
 const api = axios.create({
   baseURL: API_BASE_URL.replace(/\/+$/, ""),

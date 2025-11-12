@@ -3,6 +3,7 @@ import { buildFlutterPrompt } from "./promptFlutter";
 import { makeFlutterSkeleton } from "./skeletonFlutter";
 import { downloadFlutterAsZip } from "./zipFlutter";
 import { buildModelFromDiagram } from "../SubDiagrama/modelUtils";
+import { generateSpringBootCode } from "../services/apiGemine";
 
 /**
  * Genera un proyecto Flutter completo a partir del diagrama UML
@@ -64,187 +65,19 @@ export async function generateFlutterApp({
 }
 
 /**
- * Llama a la IA (Gemini) para generar código Flutter
+ * Llama a la IA (Gemini) para generar código Flutter usando la API centralizada
  * @param {string} prompt - Prompt construido
  * @returns {Promise<{files: Object}>}
  */
 async function callAIForFlutterCode(prompt) {
   try {
-    // Llamar directamente a la API de Gemini
-    const response = await fetchGeminiAPI(prompt);
-    
-    return parseGeminiResponse(response);
+    // Usar la API centralizada de apiGemine.js
+    const files = await generateSpringBootCode(prompt);
+    return { files };
   } catch (error) {
     console.error("Error llamando a la IA:", error);
     throw new Error(`Error generando código con IA: ${error.message}`);
   }
-}
-
-/**
- * Llama directamente a la API de Gemini
- */
-async function fetchGeminiAPI(promptText) {
-  const API_KEY = 
-    import.meta.env?.VITE_GEMINI_API_KEY || 
-    window.GEMINI_API_KEY || 
-    "AIzaSyDRGJ3UXInnuy1Yu3OEw5Y6uMqeBMWLl3M";
-    
-  const MODEL = import.meta.env?.VITE_GEMINI_MODEL || "gemini-2.0-flash";
-
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent?key=${encodeURIComponent(API_KEY)}`;
-
-  const body = {
-    contents: [{ role: "user", parts: [{ text: promptText }] }],
-    generationConfig: {
-      temperature: 0.2,
-      topP: 0.9,
-      topK: 32,
-      maxOutputTokens: 24000
-    }
-  };
-
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Gemini error ${res.status}: ${text || res.statusText}`);
-  }
-
-  const data = await res.json();
-  const raw = data?.candidates?.[0]?.content?.parts?.map(p => p?.text ?? "").join("\n") ?? "";
-
-  return raw;
-}
-
-/**
- * Parsea la respuesta de Gemini con rescate robusto
- */
-function parseGeminiResponse(response) {
-  // Limpiar la respuesta de bloques markdown
-  let cleanedResponse = (response || "").replace(/```json|```/g, "").trim();
-  
-  // Intentar parseo normal primero
-  try {
-    const parsed = JSON.parse(cleanedResponse);
-    if (parsed?.files && typeof parsed.files === "object") {
-      return { files: normalizeFilesMap(parsed.files) };
-    }
-  } catch (parseError) {
-    console.warn("Parseo JSON normal falló, intentando rescate:", parseError.message);
-  }
-
-  // Intentar rescate manual de archivos
-  const rescued = salvageFilesFromText(response);
-  if (rescued) {
-    console.warn("[Flutter] JSON incompleto — usando archivos rescatados:", Object.keys(rescued));
-    return { files: normalizeFilesMap(rescued) };
-  }
-
-  // Si todo falla, mostrar error con contexto
-  console.error("Error parseando respuesta de IA");
-  console.log("Respuesta original (primeros 1000 chars):", response.substring(0, 1000));
-  throw new Error("La IA no devolvió un JSON válido. Por favor intenta de nuevo.");
-}
-
-/**
- * Normaliza el mapa de archivos: fuerza saltos de línea reales
- */
-function normalizeFilesMap(map) {
-  const out = {};
-  for (const [k, v] of Object.entries(map || {})) {
-    if (typeof v !== "string") { 
-      out[k] = v; 
-      continue; 
-    }
-    let s = v;
-    // Si vienen literales "\n", conviértelos a saltos reales
-    if (/\\n/.test(s) && !/\n/.test(s)) {
-      s = s.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "\r");
-    }
-    // Normaliza saltos y elimina BOM
-    s = s.replace(/\r\n/g, "\n").replace(/^\uFEFF/, "");
-    out[k] = s;
-  }
-  return out;
-}
-
-/**
- * Rescate para respuestas truncadas: extrae pares "ruta":"contenido"
- */
-function salvageFilesFromText(txt) {
-  const s = (txt || "").replace(/```json|```/g, "");
-  const filesIdx = s.indexOf('"files"');
-  if (filesIdx < 0) return null;
-
-  let i = s.indexOf("{", filesIdx);
-  if (i < 0) return null;
-  i++; // entramos al objeto de files
-
-  const files = {};
-  const skipWs = () => { 
-    while (i < s.length && /[\s,]/.test(s[i])) i++; 
-  };
-
-  const readJSONString = () => {
-    if (s[i] !== '"') return null;
-    i++;
-    let out = "";
-    let esc = false;
-    while (i < s.length) {
-      const ch = s[i++];
-      if (esc) { 
-        out += ch; 
-        esc = false; 
-        continue; 
-      }
-      if (ch === "\\") { 
-        esc = true; 
-        out += ch; 
-        continue; 
-      }
-      if (ch === '"') return out;
-      out += ch;
-    }
-    return null; // string truncada
-  };
-
-  while (i < s.length) {
-    skipWs();
-    if (s[i] === "}") break;
-    const keyRaw = readJSONString();
-    if (!keyRaw) break;
-    skipWs();
-    if (s[i] !== ":") break;
-    i++;
-    skipWs();
-    const valRaw = readJSONString();
-    if (!valRaw) break;
-
-    const key = jsonUnescape(keyRaw);
-    const val = jsonUnescape(valRaw);
-    files[key] = val;
-
-    skipWs();
-    if (s[i] === ",") { i++; continue; }
-  }
-
-  return Object.keys(files).length ? files : null;
-}
-
-/**
- * Des-escapa secuencias JSON (\n → salto real, etc.)
- */
-function jsonUnescape(str) {
-  return str
-    .replace(/\\n/g, "\n")
-    .replace(/\\r/g, "\r")
-    .replace(/\\t/g, "\t")
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, "\\");
 }
 
 /**
