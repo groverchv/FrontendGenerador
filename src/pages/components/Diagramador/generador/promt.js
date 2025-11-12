@@ -14,6 +14,28 @@ ${skipPaths.map((p) => "  - " + p).join("\n")}
   return `
 Eres un generador de código Spring Boot 3 (Java 21) a partir de un MODELO construido desde un diagrama UML.
 Debes devolver ARCHIVOS JAVA COMPLETOS según el MODELO, con esta estructura de paquetes y rutas Maven exacta.
+
+REGLAS CRÍTICAS PARA RUTAS DE CONTROLADORES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+La ruta @RequestMapping DEBE ser: "/api/" + el_nombre_exacto_de_la_entidad_en_minúsculas
+- PRESERVA guiones bajos si existen en el nombre
+- NO uses plural
+- NO quites caracteres especiales del nombre original
+- USA el nombre de la entidad TAL CUAL, solo convirtiendo a minúsculas
+
+EJEMPLOS CORRECTOS:
+  Entidad "Usuario"           → @RequestMapping("/api/usuario")
+  Entidad "Producto"          → @RequestMapping("/api/producto")
+  Entidad "usuario_rol"       → @RequestMapping("/api/usuario_rol")    ← MANTÉN el guión bajo
+  Entidad "entidad1_entidad2" → @RequestMapping("/api/entidad1_entidad2") ← MANTÉN el guión bajo
+  Entidad "CategoriaProducto" → @RequestMapping("/api/categoriaproducto")
+
+EJEMPLOS INCORRECTOS (NO HAGAS ESTO):
+  ❌ Entidad "usuario_rol" → @RequestMapping("/api/usuariorol")     ← MAL: quitó el guión bajo
+  ❌ Entidad "usuario_rol" → @RequestMapping("/api/usuario-rol")    ← MAL: cambió el guión bajo
+  ❌ Entidad "usuario_rol" → @RequestMapping("/api/usuarios_roles") ← MAL: pluralizó
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 IMPORTANTE:
 - NO incluyas markdown, ni comentarios fuera del JSON, ni bloques \`\`\`.
 - Devuelve saltos de línea reales en los archivos (no dejes \\n literales).
@@ -32,9 +54,18 @@ ${skipNote}
 CONVENCIONES DE NOMBRES (OBLIGATORIO)
 ────────────────────────────────────────────────────────────────────────
 - <pkgPath> = <packageBase> reemplazando '.' por '/'.
-- <snake_case> para tablas y endpoints: minúsculas + guión bajo (plural cuando aplique).
-- Clase entidad: <Nombre>Entity (PascalCase).
-- Endpoints base "/api" + "/<snake>".
+- <snake_case> para tablas en @Table(name="..."): minúsculas con guión bajo.
+- Clase entidad: <Nombre>Entity (PascalCase igual al nombre del modelo).
+- **RUTAS DE CONTROLADORES**: 
+  @RequestMapping("/api/<nombre_exacto_en_minúsculas>")
+  donde <nombre_exacto_en_minúsculas> es el nombre de la entidad del modelo convertido a minúsculas
+  SIN modificar, SIN quitar guiones bajos, SIN pluralizar.
+  
+  EJEMPLOS OBLIGATORIOS:
+  • Modelo: { name: "Usuario" }           → @RequestMapping("/api/usuario")
+  • Modelo: { name: "usuario_rol" }       → @RequestMapping("/api/usuario_rol")
+  • Modelo: { name: "entidad1_entidad2" } → @RequestMapping("/api/entidad1_entidad2")
+  • Modelo: { name: "ProductCategory" }   → @RequestMapping("/api/productcategory")
 
 ────────────────────────────────────────────────────────────────────────
 CHECKLIST DE IMPORTS (OBLIGATORIO, SIN COMODINES)
@@ -76,12 +107,17 @@ REGLA GENERAL:
 - org.springframework.web.bind.annotation.GetMapping, PostMapping, PutMapping, DeleteMapping
 - org.springframework.web.bind.annotation.PathVariable, RequestBody
 - java.util.List
-- Rutas REST:
-  GET    /<snake>           -> obtener<NombrePlural>()
-  POST   /<snake>           -> agregar<Nombre>()
-  GET    /<snake>/{id}      -> buscarPorId()
-  PUT    /<snake>/{id}      -> modificar<Nombre>()
-  DELETE /<snake>/{id}      -> delete<Nombre>()
+- **@RequestMapping("/api/<nombre_modelo_minúsculas>")** 
+  CRÍTICO: Usa el nombre EXACTO de la entidad del modelo (campo "name"), convertido a minúsculas.
+  NO quites guiones bajos, NO pluralices, NO modifiques el nombre de ninguna forma excepto convertir a minúsculas.
+  Ejemplo: si model.entities contiene { name: "usuario_rol" } → usa @RequestMapping("/api/usuario_rol")
+  
+- Rutas REST (relativas a la ruta base):
+  GET    /                -> obtener<NombrePlural>()
+  POST   /                -> agregar<Nombre>()
+  GET    /{id}            -> buscarPorId()
+  PUT    /{id}            -> modificar<Nombre>()
+  DELETE /{id}            -> delete<Nombre>()
 
 [CONFIG] (package <packageBase>.Config):
 - org.springframework.context.annotation.Configuration
@@ -126,5 +162,27 @@ REGLAS PARA LAS ENTIDADES
 MODELO (derivado del diagrama UML):
 ────────────────────────────────────────────────────────────────────────
 ${hint}
+
+────────────────────────────────────────────────────────────────────────
+EJEMPLO DE MAPEO NOMBRE → RUTA:
+────────────────────────────────────────────────────────────────────────
+Si el modelo contiene:
+{
+  "entities": [
+    { "name": "Usuario", ... },
+    { "name": "usuario_rol", ... },
+    { "name": "entidad1_entidad2", ... }
+  ]
+}
+
+Entonces los controladores DEBEN ser:
+• UsuarioController          → @RequestMapping("/api/usuario")
+• Usuario_rolController      → @RequestMapping("/api/usuario_rol")      ← mantiene el "_"
+• Entidad1_entidad2Controller → @RequestMapping("/api/entidad1_entidad2") ← mantiene el "_"
+
+NUNCA hagas esto:
+❌ @RequestMapping("/api/usuariorol")      ← quitó el guión bajo
+❌ @RequestMapping("/api/usuario-rol")     ← cambió _ por -
+❌ @RequestMapping("/api/usuarios_roles")  ← pluralizó
 `;
 }

@@ -67,6 +67,7 @@ export default function UmlEdge(props) {
     if (owning === "A") markerStart = `url(#${ids.diamondHollow})`;
     else markerEnd = `url(#${ids.diamondHollow})`;
   }
+  // ASSOC no tiene marcadores (solo una línea simple)
 
   return (
     <>

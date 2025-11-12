@@ -42,6 +42,13 @@ function LienzoInner({
   const rf = useReactFlow();
   const containerRef = useRef(null);
 
+  // Debug: loguear edges cuando cambien
+  useEffect(() => {
+    if (edges && edges.length > 0) {
+      console.log('📊 Edges en el lienzo:', edges);
+    }
+  }, [edges]);
+
   const fitAll = (opts = {}) => {
     if (!shouldAutoFit) return;
     if (!nodes?.length) {
@@ -60,19 +67,16 @@ function LienzoInner({
     onLastAction({ x: node.position.x, y: node.position.y });
   };
 
-  // Auto-fit al montar
+  // Auto-fit al montar SOLAMENTE
   useEffect(() => {
     const t = setTimeout(() => fitAll(), 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-fit cuando cambie cantidad de nodos/aristas
-  useEffect(() => {
-    fitAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes?.length, edges?.length]);
-
+  // NO auto-fit cuando cambie cantidad de nodos/aristas
+  // Cada usuario controla su propia vista independientemente
+  
   // Auto-fit al cambiar tamaño del contenedor
   useEffect(() => {
     if (!containerRef.current) return;

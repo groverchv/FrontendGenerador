@@ -21,6 +21,13 @@ export default function AristaUML(props) {
     data,
   } = props;
 
+  // Debug: asegurarse de que tenemos coordenadas válidas
+  if (typeof sourceX !== 'number' || typeof sourceY !== 'number' ||
+      typeof targetX !== 'number' || typeof targetY !== 'number') {
+    console.warn('⚠️ AristaUML: coordenadas inválidas', { id, sourceX, sourceY, targetX, targetY });
+    return null;
+  }
+
   const kind        = data?.relKind    ?? "ASSOC";
   const dir         = data?.direction  ?? "NONE";
   const owning      = data?.owning     ?? "A";
@@ -32,7 +39,6 @@ export default function AristaUML(props) {
 
   const isDepend = kind === "DEPEND";
   const isInherit = kind === "INHERIT";
-  const isAssoc = kind === "ASSOC";
   const hasDiamondStart = (kind === "AGGR" || kind === "COMP") && owning === "A";
   const hasDiamondEnd   = (kind === "AGGR" || kind === "COMP") && owning === "B";
   
@@ -44,9 +50,8 @@ export default function AristaUML(props) {
   const hasArrowStart   = isDepend && dir === "B->A";
   const hasArrowEnd     = isDepend && dir === "A->B";
   
-  // Asociación con dirección: flecha simple cerrada
-  const hasAssocArrowStart = isAssoc && dir === "B->A";
-  const hasAssocArrowEnd   = isAssoc && dir === "A->B";
+  // Asociación: NUNCA tiene flechas (es solo una línea simple)
+  // La navegabilidad se indica con los roles/multiplicidades, no con flechas
 
   const dx = targetX - sourceX;
   const dy = targetY - sourceY;
@@ -69,10 +74,10 @@ export default function AristaUML(props) {
   let endOffset = 0;
   
   if (hasDiamondStart) startOffset = L + GAP;
-  else if (hasTriStart || hasArrowStart || hasAssocArrowStart) startOffset = T + GAP;
+  else if (hasTriStart || hasArrowStart) startOffset = T + GAP;
 
   if (hasDiamondEnd) endOffset = L + GAP;
-  else if (hasTriEnd || hasArrowEnd || hasAssocArrowEnd) endOffset = T + GAP;
+  else if (hasTriEnd || hasArrowEnd) endOffset = T + GAP;
 
   // Puntos del trazo (ya desplazados)
   const sx = sourceX + ux * startOffset;
@@ -101,8 +106,8 @@ export default function AristaUML(props) {
   const alongEnd = (labelsBesideMarker ? ALONG_NEAR : ALONG_FAR);
   const normalEnd = (labelsBesideMarker ? NORMAL_NEAR : NORMAL_FAR);
 
-  const tipStart = hasDiamondStart ? L : (hasTriStart || hasArrowStart || hasAssocArrowStart ? T : 0);
-  const tipEnd   = hasDiamondEnd   ? L : (hasTriEnd || hasArrowEnd || hasAssocArrowEnd ? T : 0);
+  const tipStart = hasDiamondStart ? L : (hasTriStart || hasArrowStart ? T : 0);
+  const tipEnd   = hasDiamondEnd   ? L : (hasTriEnd || hasArrowEnd ? T : 0);
 
   // Coloca la etiqueta A justo después del marcador del inicio
   const srcLabelX = sourceX + ux * (tipStart + GAP + alongStart) + nx * normalStart;
@@ -173,26 +178,6 @@ export default function AristaUML(props) {
       strokeLinejoin="round"
     />
   );
-  
-  // FLECHA SIMPLE CERRADA para Asociación direccional (rellena)
-  const AssocArrowStart = (
-    <path
-      d={`M 0 0 L ${T} ${-T} L ${T} ${T} Z`}
-      fill={stroke}
-      stroke={stroke}
-      strokeWidth={strokeWidth}
-      strokeLinejoin="miter"
-    />
-  );
-  const AssocArrowEnd = (
-    <path
-      d={`M 0 0 L ${-T} ${-T} L ${-T} ${T} Z`}
-      fill={stroke}
-      stroke={stroke}
-      strokeWidth={strokeWidth}
-      strokeLinejoin="miter"
-    />
-  );
 
   return (
     <>
@@ -210,22 +195,20 @@ export default function AristaUML(props) {
       {/* Marcadores sueltos, con la punta en el puerto */}
       <svg style={{ position: "absolute", overflow: "visible", pointerEvents: "none" }}>
         {/* Marcador al inicio (source) */}
-        {(hasDiamondStart || hasTriStart || hasArrowStart || hasAssocArrowStart) && (
+        {(hasDiamondStart || hasTriStart || hasArrowStart) && (
           <g transform={`translate(${sourceX}, ${sourceY}) rotate(${angleDeg})`}>
             {hasDiamondStart && DiamondPathStart}
             {hasTriStart && TriangleStart}
             {hasArrowStart && ArrowStart}
-            {hasAssocArrowStart && AssocArrowStart}
           </g>
         )}
         
         {/* Marcador al final (target) */}
-        {(hasDiamondEnd || hasTriEnd || hasArrowEnd || hasAssocArrowEnd) && (
+        {(hasDiamondEnd || hasTriEnd || hasArrowEnd) && (
           <g transform={`translate(${targetX}, ${targetY}) rotate(${angleDeg})`}>
             {hasDiamondEnd && DiamondPathEnd}
             {hasTriEnd && TriangleEnd}
             {hasArrowEnd && ArrowEnd}
-            {hasAssocArrowEnd && AssocArrowEnd}
           </g>
         )}
       </svg>

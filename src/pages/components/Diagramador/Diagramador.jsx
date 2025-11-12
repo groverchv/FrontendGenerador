@@ -26,14 +26,17 @@ import { processImageAndCreateEntity, processImageAndCreateDiagram } from "./ser
 
 // Utils
 import { findBestHandle, updateNodesWithHandleUsage } from "./SubDiagrama/utils";
-// Tipos para ReactFlow - definidos fuera del componente para evitar warnings
-const nodeTypes = { classNode: NodoClase };
-const edgeTypes = { uml: AristaUML };
+
+// ✅ DEFINIR TIPOS A NIVEL DE MÓDULO (fuera del componente)
+// Esto garantiza que las referencias sean 100% estables
+const NODE_TYPES = { classNode: NodoClase };
+const EDGE_TYPES = { uml: AristaUML };
 
 const Diagramador = forwardRef(function Diagramador(
   { projectId, projectName, sock },
   ref
 ) {
+
   // Estado base
   const [nodes, setNodes, rfOnNodesChange] = useNodesState([]);
   const [edges, setEdges, rfOnEdgesChange] = useEdgesState([]);
@@ -66,7 +69,7 @@ const Diagramador = forwardRef(function Diagramador(
 
   // Persistencia + import/export
   const versionRef = useRef(null);
-  const { loading, saving, persistNow, exportJSON, exportPUML, importFromJSONText, importFromPUMLText } =
+  const { loading, exportJSON, exportPUML, importFromJSONText, importFromPUMLText } =
     usePersistenciaYArchivo({
       projectId,
       projectName,
@@ -196,57 +199,27 @@ const Diagramador = forwardRef(function Diagramador(
             });
           });
 
-          // Función auxiliar para encontrar el mejor handle disponible
-          const findBestHandle = (nodeId, isSource) => {
-            const node = newNodes.find(n => n.id === nodeId);
-            if (!node) return isSource ? 'r1' : 'l1';
-            
-            const usage = node.data.usage;
-            const handles = isSource ? usage.source : usage.target;
-            
-            // Encontrar el handle con menor uso
-            const handleEntries = Object.entries(handles);
-            handleEntries.sort((a, b) => a[1] - b[1]);
-            
-            return handleEntries[0][0];
-          };
-
-          // Crear aristas con múltiples puntos de conexión
+          // Crear aristas usando los handles y datos calculados en imageProcessor
           diagramData.edges.forEach((edgeData, index) => {
             const sourceId = nodeIdMap[edgeData.source];
             const targetId = nodeIdMap[edgeData.target];
 
             if (sourceId && targetId) {
-              // Encontrar los mejores handles disponibles
-              const sourceHandle = findBestHandle(sourceId, true);
-              const targetHandle = findBestHandle(targetId, false);
-              
-              // Actualizar contadores de uso
-              const sourceNode = newNodes.find(n => n.id === sourceId);
-              const targetNode = newNodes.find(n => n.id === targetId);
-              
-              if (sourceNode) {
-                sourceNode.data.usage.source[sourceHandle]++;
-              }
-              if (targetNode) {
-                targetNode.data.usage.target[targetHandle]++;
-              }
-
               newEdges.push({
                 id: `e${Date.now()}-${index}`,
                 source: sourceId,
                 target: targetId,
-                sourceHandle: sourceHandle,
-                targetHandle: targetHandle,
-                type: "uml",
-                label: edgeData.verb || edgeData.label,
-                data: {
-                  mA: edgeData.mA || "1",
-                  mB: edgeData.mB || "1",
-                  verb: edgeData.verb || edgeData.label || "",
-                  relType: edgeData.relType || "1-1",
-                  relKind: edgeData.relKind || "ASSOC",
-                  direction: edgeData.direction || "NONE"
+                sourceHandle: edgeData.sourceHandle || 'r1',
+                targetHandle: edgeData.targetHandle || 'l1-t',
+                type: edgeData.type || "uml",
+                label: edgeData.label || "",
+                data: edgeData.data || {
+                  mA: "1",
+                  mB: "1",
+                  verb: "",
+                  relType: "1-1",
+                  relKind: "ASSOC",
+                  direction: "NONE"
                 }
               });
             }
@@ -273,7 +246,6 @@ const Diagramador = forwardRef(function Diagramador(
   };
 
   useImperativeHandle(ref, () => ({
-    persistNow,
     handleGenerate,
     handleGenerateFlutter,
     exportJSON,
@@ -294,17 +266,17 @@ const Diagramador = forwardRef(function Diagramador(
 
   return (
     <div className="w-full h-[calc(100vh-56px)] md:grid md:grid-cols-[1fr_420px] overflow-hidden relative">
-      {(loading || saving) && (
+      {loading && (
         <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] flex items-center justify-center z-50">
-          <Spinner label={loading ? "Cargando diagrama..." : "Guardando cambios..."} />
+          <Spinner label="Cargando diagrama..." />
         </div>
       )}
       {/* Lienzo */}
       <LienzoDeDiagrama
         nodes={nodes}
         edges={edges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
+        nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -338,9 +310,9 @@ const Diagramador = forwardRef(function Diagramador(
         onClear={() => {
           setNodes([]);
           setEdges([]);
-          scheduleSnapshot();
+          setSelectedId(null); // Limpiar selección también
+          scheduleSnapshot(); // Sincroniza automáticamente con otros usuarios
         }}
-        onExport={persistNow}
         onGenerate={handleGenerate}
         onOpenIA={() => setIaOpen(true)}
         // CRUD de atributos de la entidad seleccionada

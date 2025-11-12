@@ -152,31 +152,36 @@ Instrucciones específicas:
 10. Los nombres deben estar en formato apropiado (PascalCase para clases, camelCase para atributos/métodos)
 
 Para las relaciones:
-1. Identifica todas las líneas que conectan las clases
-2. Tipos de relación (IMPORTANTE - identifica correctamente):
+1. BUSCA TODAS LAS LÍNEAS que conectan las clases - incluso si son líneas simples sin símbolos
+2. Para CADA línea que veas, crea una relación en el array "relations"
+3. Tipos de relación (IMPORTANTE - identifica correctamente):
    - "association": línea simple (puede tener flecha simple en un extremo o ninguna)
    - "aggregation": línea con rombo VACÍO/BLANCO en un extremo (representa "tiene un")
    - "composition": línea con rombo LLENO/NEGRO en un extremo (representa "es parte de")
    - "inheritance": línea con triángulo VACÍO/flecha grande en un extremo (representa "es un" / herencia)
    - "dependency": línea PUNTEADA/DISCONTINUA con flecha (representa dependencia débil)
-3. Detecta las multiplicidades en AMBOS extremos:
+4. Detecta las multiplicidades en AMBOS extremos de CADA línea:
+   - Busca números o texto cerca de los extremos de cada línea
    - "1": uno exactamente
    - "*": muchos (cero o más)
    - "0..1": opcional (cero o uno)
    - "1..*": uno o más
    - "0..*": cero o más (equivalente a *)
-   - Si no hay multiplicidad visible, usa "1" por defecto
-4. Para relaciones N-M (muchos a muchos):
+   - Si no hay multiplicidad visible en un extremo, usa "1" por defecto
+5. Para relaciones N-M (muchos a muchos):
    - Si AMBOS extremos tienen "*" o "0..*" o "1..*", es una relación N-M
    - Marca estas relaciones especialmente para crear tabla intermedia
-5. Captura el texto de la etiqueta de la relación si existe
-6. Identifica la dirección:
+6. Captura el texto de la etiqueta de la relación si existe (busca texto cerca de la línea)
+7. Identifica la dirección:
    - Si la flecha apunta de A hacia B: from=A, to=B
    - Si es un rombo en A conectado a B: from=A, to=B (el rombo está en el lado "contenedor")
    - Si es herencia, el triángulo apunta a la clase padre: from=ClaseHija, to=ClasePadre
+   - Si solo es una línea simple sin flecha: identifica de izquierda a derecha o de arriba a abajo
 
-CRÍTICO para relaciones N-M:
-- Si detectas "*" en ambos lados, agrega un campo adicional: "requiresJoinTable": true
+CRÍTICO: 
+- DEBES detectar TODAS las líneas entre clases
+- Si ves una tabla intermedia (ej: "Catalogo_Producto"), detecta sus relaciones también
+- Para relaciones N-M: agrega "requiresJoinTable": true
 - Sugiere un nombre para la tabla intermedia en "suggestedJoinTableName"
 
 IMPORTANTE: Devuelve SOLO el JSON válido, sin texto adicional ni formato markdown.
@@ -471,6 +476,66 @@ export function convertTodiagramFormat(classInfo) {
 }
 
 /**
+ * Determina el mejor handle para conectar dos nodos basándose en sus posiciones
+ * @param {Object} sourcePos - Posición del nodo origen {x, y}
+ * @param {Object} targetPos - Posición del nodo destino {x, y}
+ * @param {boolean} isSource - true si es el handle de origen, false si es de destino
+ * @param {Set} usedHandles - Set de handles ya ocupados para este nodo
+ * @returns {string} - ID del handle óptimo
+ */
+function getBestHandleForConnection(sourcePos, targetPos, isSource, usedHandles = new Set()) {
+  const dx = targetPos.x - sourcePos.x;
+  const dy = targetPos.y - sourcePos.y;
+  
+  // Calcular ángulo de la conexión
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI; // -180 a 180
+  
+  // Normalizar ángulo a 0-360
+  const normalizedAngle = angle < 0 ? angle + 360 : angle;
+  
+  // Handles disponibles según la dirección (ordenados por prioridad de uso)
+  // Handles fuente (sin sufijo -t)
+  const sourceHandles = {
+    right: ['r1', 'r2', 'tr', 'br'],     // 0° ± 45° (derecha)
+    bottom: ['b1', 'b2', 'b3', 'b4', 'br', 'bl'],    // 90° ± 45° (abajo)
+    left: ['l1', 'l2', 'tl', 'bl'],      // 180° ± 45° (izquierda)
+    top: ['t1', 't2', 't3', 't4', 'tl', 'tr'],       // 270° ± 45° (arriba)
+  };
+  
+  // Handles destino (con sufijo -t)
+  const targetHandles = {
+    right: ['r1-t', 'r2-t', 'tr-t', 'br-t'],
+    bottom: ['b1-t', 'b2-t', 'b3-t', 'b4-t', 'br-t', 'bl-t'],
+    left: ['l1-t', 'l2-t', 'tl-t', 'bl-t'],
+    top: ['t1-t', 't2-t', 't3-t', 't4-t', 'tl-t', 'tr-t'],
+  };
+  
+  const handles = isSource ? sourceHandles : targetHandles;
+  
+  // Seleccionar handle basado en el ángulo
+  let selectedHandles;
+  if (normalizedAngle >= 315 || normalizedAngle < 45) {
+    selectedHandles = handles.right;
+  } else if (normalizedAngle >= 45 && normalizedAngle < 135) {
+    selectedHandles = handles.bottom;
+  } else if (normalizedAngle >= 135 && normalizedAngle < 225) {
+    selectedHandles = handles.left;
+  } else {
+    selectedHandles = handles.top;
+  }
+  
+  // Buscar el primer handle libre en la dirección óptima
+  for (const handle of selectedHandles) {
+    if (!usedHandles.has(handle)) {
+      return handle;
+    }
+  }
+  
+  // Si todos están ocupados, retornar el primero (permitir reutilización)
+  return selectedHandles[0];
+}
+
+/**
  * Convierte múltiples clases y relaciones al formato del diagramador
  * @param {Object} diagramInfo - Información del diagrama extraída por Gemini
  * @param {Object} canvasSize - Tamaño del canvas disponible {width, height}
@@ -480,11 +545,20 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
   const nodes = [];
   const edges = [];
   const classNameToId = {};
+  
+  // Registro de handles ocupados por nodo: { nodeId: { source: Set, target: Set } }
+  const handleUsage = {};
 
   // Convertir clases a nodos
   diagramInfo.classes.forEach((classInfo, index) => {
     const nodeId = `node-${Date.now()}-${index}`;
     classNameToId[classInfo.className] = nodeId;
+    
+    // Inicializar registro de handles para este nodo
+    handleUsage[nodeId] = {
+      source: new Set(),
+      target: new Set()
+    };
 
     // Calcular posición real basada en la posición relativa detectada
     let position = { x: 100, y: 100 };
@@ -560,7 +634,18 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
   });
 
   // Convertir relaciones a aristas
+  console.log("Procesando relaciones:", diagramInfo.relations?.length || 0);
+  
   diagramInfo.relations?.forEach((relation, index) => {
+    console.log(`Relación ${index + 1}:`, {
+      from: relation.from,
+      to: relation.to,
+      type: relation.type,
+      multiplicityFrom: relation.multiplicityFrom,
+      multiplicityTo: relation.multiplicityTo,
+      label: relation.label
+    });
+
     const sourceId = classNameToId[relation.from];
     const targetId = classNameToId[relation.to];
 
@@ -569,28 +654,61 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
       return;
     }
 
+    // Obtener nodos para calcular handles
+    const sourceNode = nodes.find(n => n.id === sourceId);
+    const targetNode = nodes.find(n => n.id === targetId);
+
+    if (!sourceNode || !targetNode) {
+      console.warn(`No se encontraron nodos para la relación ${relation.from} -> ${relation.to}`);
+      return;
+    }
+
+    // Calcular handles óptimos basados en posiciones, considerando handles ya ocupados
+    const sourceHandle = getBestHandleForConnection(
+      sourceNode.position, 
+      targetNode.position, 
+      true, 
+      handleUsage[sourceId]?.source
+    );
+    const targetHandle = getBestHandleForConnection(
+      sourceNode.position, 
+      targetNode.position, 
+      false, 
+      handleUsage[targetId]?.target
+    );
+    
+    // Marcar handles como ocupados
+    handleUsage[sourceId]?.source.add(sourceHandle);
+    handleUsage[targetId]?.target.add(targetHandle);
+
     // Mapear tipo de relación a formato del diagramador
     let relKind = "ASSOC";
     let relType = "1-1";
     let direction = "NONE";
+    let owning = "A"; // Lado dueño (para AGGR y COMP)
 
     switch (relation.type?.toLowerCase()) {
       case "inheritance":
         relKind = "INHERIT";
-        direction = "a->b"; // La flecha apunta de hijo a padre
+        direction = "A->B"; // La flecha apunta de hijo a padre
         break;
       case "composition":
         relKind = "COMP";
+        direction = "NONE";
+        owning = "A"; // El rombo está en el lado contenedor
         break;
       case "aggregation":
         relKind = "AGGR";
+        direction = "NONE";
+        owning = "A"; // El rombo está en el lado contenedor
         break;
       case "dependency":
         relKind = "DEPEND";
-        direction = "a->b";
+        direction = "A->B";
         break;
       default:
         relKind = "ASSOC";
+        direction = "NONE"; // Asociación sin flechas
     }
 
     // Normalizar multiplicidades
@@ -647,6 +765,45 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
           position: joinPosition,
           isJoinTable: true
         });
+        
+        // Inicializar registro de handles para la tabla intermedia
+        handleUsage[joinNodeId] = {
+          source: new Set(),
+          target: new Set()
+        };
+
+        // Calcular handles para las relaciones con la tabla intermedia, considerando handles ocupados
+        const sourceToJoinSourceHandle = getBestHandleForConnection(
+          sourceNode.position, 
+          joinPosition, 
+          true, 
+          handleUsage[sourceId]?.source
+        );
+        const sourceToJoinTargetHandle = getBestHandleForConnection(
+          sourceNode.position, 
+          joinPosition, 
+          false, 
+          handleUsage[joinNodeId]?.target
+        );
+        
+        const targetToJoinSourceHandle = getBestHandleForConnection(
+          targetNode.position, 
+          joinPosition, 
+          true, 
+          handleUsage[targetId]?.source
+        );
+        const targetToJoinTargetHandle = getBestHandleForConnection(
+          targetNode.position, 
+          joinPosition, 
+          false, 
+          handleUsage[joinNodeId]?.target
+        );
+        
+        // Marcar handles como ocupados
+        handleUsage[sourceId]?.source.add(sourceToJoinSourceHandle);
+        handleUsage[joinNodeId]?.target.add(sourceToJoinTargetHandle);
+        handleUsage[targetId]?.source.add(targetToJoinSourceHandle);
+        handleUsage[joinNodeId]?.target.add(targetToJoinTargetHandle);
 
         // Crear dos relaciones 1-N en lugar de una N-M
         // Relación 1: from -> joinTable (1 a N)
@@ -654,13 +811,18 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
           id: `edge-${Date.now()}-${index}-1`,
           source: sourceId,
           target: joinNodeId,
+          sourceHandle: sourceToJoinSourceHandle,
+          targetHandle: sourceToJoinTargetHandle,
+          type: "uml",
           label: relation.label ? `${relation.label} (1)` : "",
-          mA: "1",
-          mB: "*",
-          relKind: "ASSOC",
-          relType: "1-N",
-          direction: "NONE",
-          verb: relation.label || ""
+          data: {
+            mA: "1",
+            mB: "*",
+            relKind: "ASSOC",
+            relType: "1-N",
+            direction: "NONE",
+            verb: relation.label || ""
+          }
         });
 
         // Relación 2: to -> joinTable (1 a N)
@@ -668,13 +830,18 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
           id: `edge-${Date.now()}-${index}-2`,
           source: targetId,
           target: joinNodeId,
+          sourceHandle: targetToJoinSourceHandle,
+          targetHandle: targetToJoinTargetHandle,
+          type: "uml",
           label: relation.label ? `${relation.label} (2)` : "",
-          mA: "1",
-          mB: "*",
-          relKind: "ASSOC",
-          relType: "1-N",
-          direction: "NONE",
-          verb: relation.label || ""
+          data: {
+            mA: "1",
+            mB: "*",
+            relKind: "ASSOC",
+            relType: "1-N",
+            direction: "NONE",
+            verb: relation.label || ""
+          }
         });
 
         // No creamos la relación N-M directa, solo las dos 1-N
@@ -693,13 +860,19 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
       id: `edge-${Date.now()}-${index}`,
       source: sourceId,
       target: targetId,
+      sourceHandle: sourceHandle,
+      targetHandle: targetHandle,
+      type: "uml",
       label: relation.label || "",
-      mA: mFrom,
-      mB: mTo,
-      relKind: relKind,
-      relType: relType,
-      direction: direction,
-      verb: relation.label || ""
+      data: {
+        mA: mFrom,
+        mB: mTo,
+        relKind: relKind,
+        relType: relType,
+        direction: direction,
+        owning: owning,
+        verb: relation.label || ""
+      }
     });
   });
 
