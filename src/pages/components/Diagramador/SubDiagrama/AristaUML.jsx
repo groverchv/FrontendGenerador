@@ -19,12 +19,28 @@ export default function AristaUML(props) {
     sourceX, sourceY,
     targetX, targetY,
     data,
+    source,
+    target,
   } = props;
+
+  // 🔍 DEBUG: Ver qué recibe el componente
+  console.log("🎨 AristaUML props completos:", props);
 
   // Debug: asegurarse de que tenemos coordenadas válidas
   if (typeof sourceX !== 'number' || typeof sourceY !== 'number' ||
       typeof targetX !== 'number' || typeof targetY !== 'number') {
-    console.warn('⚠️ AristaUML: coordenadas inválidas', { id, sourceX, sourceY, targetX, targetY });
+    console.error("❌ AristaUML: Coordenadas inválidas", { 
+      id, 
+      source, 
+      target,
+      sourceX, sourceY, targetX, targetY,
+      hasCoords: {
+        sourceX: typeof sourceX,
+        sourceY: typeof sourceY,
+        targetX: typeof targetX,
+        targetY: typeof targetY
+      }
+    });
     return null;
   }
 
@@ -34,6 +50,20 @@ export default function AristaUML(props) {
   const strokeWidth = data?.strokeWidth ?? 2;
   const stroke      = data?.stroke ?? "#444";
   const markerScale = data?.markerScale ?? 4.0;
+
+  // 🔍 DEBUG: Ver qué datos recibe el componente
+  console.log("✅ Renderizando AristaUML:", {
+    id,
+    source,
+    target,
+    kind,
+    dir,
+    owning,
+    mA: data?.mA,
+    mB: data?.mB,
+    verb: data?.verb,
+    coords: { sourceX, sourceY, targetX, targetY }
+  });
 
   const labelsBesideMarker = data?.labelsBesideMarker ?? true;
 

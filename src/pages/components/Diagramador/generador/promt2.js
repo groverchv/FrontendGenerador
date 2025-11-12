@@ -20,10 +20,32 @@ REGLAS PARA SISTEMAS COMPLETOS:
 2. RELACIONES COMPLETAS:
    - TODAS las entidades deben estar relacionadas coherentemente
    - Usar multiplicidades correctas: "1", "0..1", "1..*", "0..*"
-   - relKind: "ASSOC" (asociación), "COMP" (composición), "AGGR" (agregación), "INHERIT" (herencia)
    - Agregar nombre/verbo descriptivo a cada relación
 
-3. Genera TODAS las entidades y relaciones necesarias para el sistema solicitado` 
+3. TIPOS DE RELACIÓN UML (relKind):
+   a) "ASSOC" (Asociación): Relación básica entre entidades
+      - Soporta multiplicidades y verbos
+      - Ej: Usuario-Pedido, Cliente-Dirección
+   
+   b) "AGGR" (Agregación): Relación todo-parte (rombo vacío ◇)
+      - El todo "contiene" la parte, pero la parte puede existir independientemente
+      - Requiere especificar owning: "A" o "B" (quien es el todo)
+      - Ej: Departamento-Profesor, Curso-Estudiante
+   
+   c) "COMP" (Composición): Relación todo-parte fuerte (rombo lleno ◆)
+      - El todo "posee" la parte, la parte NO puede existir sin el todo
+      - Requiere especificar owning: "A" o "B" (quien es el todo)
+      - Ej: Pedido-DetallePedido, Factura-ItemFactura
+   
+   d) "INHERIT" (Herencia): Relación es-un (triángulo en padre)
+      - NO usa multiplicidades ni verbos
+      - Ej: Vehiculo←Carro, Persona←Estudiante, Animal←Perro
+   
+   e) "DEPEND" (Dependencia): Una clase usa o depende de otra (línea punteada)
+      - NO usa multiplicidades, puede tener verbo
+      - Ej: Servicio→Repositorio, Controller→Service
+
+4. Genera TODAS las entidades y relaciones necesarias para el sistema solicitado` 
   : `
 Eres un asistente para DIAGRAMAS UML. El usuario solicita una tarea ESPECÍFICA.
 
@@ -43,8 +65,33 @@ REGLAS PARA TAREAS ESPECÍFICAS:
 3. RELACIONES:
    - SOLO crea relaciones si el usuario las solicita explícitamente
    - NO asumas relaciones automáticamente
+   - Usa el tipo de relación UML correcto según el contexto
 
-4. TIPOS DE DATOS COMUNES:
+4. TIPOS DE RELACIÓN UML (relKind):
+   a) "ASSOC" (Asociación): Relación básica entre entidades
+      - Soporta multiplicidades y verbos
+      - Ej: Usuario-Pedido (1 a 0..*)
+   
+   b) "AGGR" (Agregación): Relación todo-parte débil (rombo vacío ◇)
+      - La parte puede existir sin el todo
+      - Requiere owning: "A" o "B" (quien es el contenedor)
+      - Ej: Departamento-Profesor (el profesor puede existir sin departamento)
+   
+   c) "COMP" (Composición): Relación todo-parte fuerte (rombo lleno ◆)
+      - La parte NO puede existir sin el todo
+      - Requiere owning: "A" o "B" (quien es el dueño)
+      - Ej: Pedido-DetallePedido (detalle no existe sin pedido)
+   
+   d) "INHERIT" (Herencia): Relación es-un tipo-de (triángulo)
+      - NO usa multiplicidades ni verbos
+      - "a" es la subclase, "b" es la superclase
+      - Ej: {"a":"Estudiante","b":"Persona","relKind":"INHERIT"}
+   
+   e) "DEPEND" (Dependencia): Usa o depende de (línea punteada →)
+      - NO usa multiplicidades, puede tener verbo opcional
+      - Ej: Controlador depende de Servicio
+
+5. TIPOS DE DATOS COMUNES:
    - String: textos (nombre, email, descripción)
    - Integer/Long: números enteros (id, cantidad, edad)
    - BigDecimal: valores monetarios (precio, total)
@@ -61,17 +108,26 @@ FORMATO DE RESPUESTA (JSON válido):
 {
   "actions": [
     {"op":"add_entity","name":"NombreEntidad","attrs":[{"name":"id","type":"Integer"},{"name":"atributo1","type":"String"},{"name":"createdAt","type":"Date"}]},
-    {"op":"add_relation","a":"Entidad1","b":"Entidad2","mA":"1..*","mB":"1","relKind":"ASSOC","verb":"verbo descriptivo"}
+    {"op":"add_relation","a":"Entidad1","b":"Entidad2","mA":"1..*","mB":"1","relKind":"ASSOC","verb":"gestiona","direction":"A->B"},
+    {"op":"add_relation","a":"DetallePedido","b":"Pedido","mA":"1..*","mB":"1","relKind":"COMP","owning":"B","direction":"A->B"},
+    {"op":"add_relation","a":"Estudiante","b":"Persona","relKind":"INHERIT"},
+    {"op":"add_relation","a":"Controller","b":"Service","relKind":"DEPEND","verb":"usa","direction":"A->B"}
   ]
 }
 
 OPERACIONES DISPONIBLES:
-- add_entity: Crear nueva entidad
-- update_entity: Actualizar entidad existente
-- add_attr: Agregar atributo a entidad existente
-- remove_attr: Eliminar atributo
+- add_entity: Crear nueva entidad con atributos
+- update_entity: Actualizar entidad existente agregando/modificando atributos
+- add_attr: Agregar un atributo específico a entidad existente
+- remove_attr: Eliminar un atributo específico
 - add_relation: Crear relación entre dos entidades
-- add_relation_nm: Relación muchos a muchos (crea tabla intermedia)
+  * ASSOC: {"op":"add_relation","a":"A","b":"B","mA":"1","mB":"0..*","relKind":"ASSOC","verb":"tiene","direction":"A->B"}
+  * AGGR: {"op":"add_relation","a":"A","b":"B","mA":"1..*","mB":"1","relKind":"AGGR","owning":"B","direction":"A->B"}
+  * COMP: {"op":"add_relation","a":"A","b":"B","mA":"1..*","mB":"1","relKind":"COMP","owning":"B","direction":"A->B"}
+  * INHERIT: {"op":"add_relation","a":"Hija","b":"Padre","relKind":"INHERIT"} (NO mA, NO mB, NO verb)
+  * DEPEND: {"op":"add_relation","a":"A","b":"B","relKind":"DEPEND","verb":"usa","direction":"A->B"} (NO mA, NO mB)
+- add_relation_nm: Relación muchos a muchos (crea tabla intermedia automáticamente)
+  * {"op":"add_relation_nm","a":"Usuario","b":"Rol","joinName":"usuario_rol"}
 
 IMPORTANTE:
 - Genera EXACTAMENTE lo que el usuario solicita, ni más ni menos

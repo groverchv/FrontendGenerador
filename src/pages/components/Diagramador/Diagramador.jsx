@@ -26,6 +26,7 @@ import { processImageAndCreateEntity, processImageAndCreateDiagram } from "./ser
 
 // Utils
 import { findBestHandle, updateNodesWithHandleUsage } from "./SubDiagrama/utils";
+import { SOURCE_HANDLES, TARGET_HANDLES } from "../../../constants";
 
 // ✅ DEFINIR TIPOS A NIVEL DE MÓDULO (fuera del componente)
 // Esto garantiza que las referencias sean 100% estables
@@ -144,7 +145,13 @@ const Diagramador = forwardRef(function Diagramador(
                 x: base.x + jitter(ns.length), 
                 y: base.y + jitter(ns.length) 
               },
-              data: entityData,
+              data: {
+                ...entityData,
+                usage: {
+                  target: Object.fromEntries(TARGET_HANDLES.map((h) => [h, 0])),
+                  source: Object.fromEntries(SOURCE_HANDLES.map((h) => [h, 0])),
+                }
+              },
             })
           );
           
@@ -192,8 +199,8 @@ const Diagramador = forwardRef(function Diagramador(
                 attrs: nodeData.attrs,
                 usage: {
                   // Inicializar contadores de uso de handles
-                  target: { tl: 0, l1: 0, l2: 0, bl: 0, t1: 0, t2: 0, t3: 0, t4: 0, tr: 0, r1: 0, r2: 0, br: 0 },
-                  source: { tl2: 0, l3: 0, l4: 0, bl2: 0, b1: 0, b2: 0, b3: 0, b4: 0, tr2: 0, r3: 0, r4: 0, br2: 0 }
+                  target: Object.fromEntries(TARGET_HANDLES.map((h) => [h, 0])),
+                  source: Object.fromEntries(SOURCE_HANDLES.map((h) => [h, 0])),
                 }
               }
             });
@@ -301,7 +308,14 @@ const Diagramador = forwardRef(function Diagramador(
               id,
               type: "classNode",
               position: { x: base.x + jitter(ns.length), y: base.y + jitter(ns.length) },
-              data: { label: `Entidad${ns.length + 1}`, attrs: [] },
+              data: { 
+                label: `Entidad${ns.length + 1}`, 
+                attrs: [],
+                usage: {
+                  target: Object.fromEntries(TARGET_HANDLES.map((h) => [h, 0])),
+                  source: Object.fromEntries(SOURCE_HANDLES.map((h) => [h, 0])),
+                }
+              },
             })
           );
           setSelectedId(id);
@@ -376,28 +390,52 @@ const Diagramador = forwardRef(function Diagramador(
         onRelacionSimple={({ sourceId, targetId, tipo, mA, mB, verb, meta }) => {
           const id = "e" + Date.now();
           
+          console.log("🎯 Creando relación simple:", { sourceId, targetId, tipo, mA, mB, verb, meta });
+          
+          // Verifica que ambos nodos existen
+          const sourceNode = nodes.find(n => n.id === sourceId);
+          const targetNode = nodes.find(n => n.id === targetId);
+          
+          if (!sourceNode || !targetNode) {
+            console.error("❌ No se encontraron los nodos:", { sourceId, targetId, sourceNode, targetNode });
+            return;
+          }
+          
+          console.log("✅ Nodos encontrados:", {
+            source: { id: sourceNode.id, label: sourceNode.data?.label, position: sourceNode.position },
+            target: { id: targetNode.id, label: targetNode.data?.label, position: targetNode.position }
+          });
+          
           // Encuentra el mejor handle disponible para source y target
           const sourceHandle = findBestHandle(sourceId, edges, true);
           const targetHandle = findBestHandle(targetId, edges, false);
           
-          setEdges((es) =>
-            es.concat({
-              id,
-              source: sourceId,
-              target: targetId,
-              sourceHandle,
-              targetHandle,
-              type: "uml",
-              label: verb,
-              data: {
-                mA,
-                mB,
-                verb,
-                relType: tipo,
-                ...meta, // relKind / owning / direction / cascade / orphanRemoval / inheritStrategy ...
-              },
-            })
-          );
+          console.log("🔌 Handles seleccionados:", { sourceHandle, targetHandle });
+          
+          const newEdge = {
+            id,
+            source: sourceId,
+            target: targetId,
+            sourceHandle,
+            targetHandle,
+            type: "uml",
+            label: verb,
+            data: {
+              mA,
+              mB,
+              verb,
+              relType: tipo,
+              ...meta, // relKind / owning / direction / cascade / orphanRemoval / inheritStrategy ...
+            },
+          };
+          
+          console.log("📦 Edge a crear:", newEdge);
+          
+          setEdges((es) => {
+            const updated = es.concat(newEdge);
+            console.log("✅ Edges actualizados:", updated);
+            return updated;
+          });
           
           // Actualiza el uso de handles en los nodos
           setNodes((ns) => updateNodesWithHandleUsage(ns, [...edges, {
@@ -431,8 +469,8 @@ const Diagramador = forwardRef(function Diagramador(
                 label: nombreIntermedia || `${nodeA.data.label}_${nodeB.data.label}`,
                 attrs: [],
                 usage: {
-                  target: { tl: 0, l1: 0, l2: 0, bl: 0, t1: 0, t2: 0, t3: 0, t4: 0, tr: 0, r1: 0, r2: 0, br: 0 },
-                  source: { tl2: 0, l3: 0, l4: 0, bl2: 0, b1: 0, b2: 0, b3: 0, b4: 0, tr2: 0, r3: 0, r4: 0, br2: 0 }
+                  target: Object.fromEntries(TARGET_HANDLES.map((h) => [h, 0])),
+                  source: Object.fromEntries(SOURCE_HANDLES.map((h) => [h, 0])),
                 }
               },
             })

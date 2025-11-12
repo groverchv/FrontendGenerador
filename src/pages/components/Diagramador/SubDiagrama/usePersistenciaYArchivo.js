@@ -7,7 +7,9 @@ import { useToast } from "../../../../hooks/useToast";
 import { 
   ERROR_MESSAGES, 
   SUCCESS_MESSAGES, 
-  LAYOUT_CONFIG 
+  LAYOUT_CONFIG,
+  SOURCE_HANDLES,
+  TARGET_HANDLES
 } from "../../../../constants";
 
 /**
@@ -84,8 +86,38 @@ export default function usePersistenciaYArchivo({
           }
         }
         
-        setNodes(parsedNodes);
-        setEdges(parsedEdges);
+        // Asegurar que todos los nodos tengan el objeto usage inicializado
+        const nodesWithUsage = parsedNodes.map(node => ({
+          ...node,
+          data: {
+            ...node.data,
+            usage: node.data?.usage || {
+              target: Object.fromEntries(TARGET_HANDLES.map(h => [h, 0])),
+              source: Object.fromEntries(SOURCE_HANDLES.map(h => [h, 0])),
+            }
+          }
+        }));
+        
+        // Asegurar que todos los edges tengan sourceHandle y targetHandle
+        const edgesWithHandles = parsedEdges.map((edge, index) => {
+          const hasHandles = edge.sourceHandle && edge.targetHandle;
+          if (!hasHandles) {
+            console.warn(`⚠️ Edge ${edge.id || index} sin handles, agregando defaults:`, edge);
+            return {
+              ...edge,
+              sourceHandle: edge.sourceHandle || 'b1',
+              targetHandle: edge.targetHandle || 't1-t',
+              type: edge.type || 'uml'
+            };
+          }
+          return edge;
+        });
+        
+        console.log('[usePersistenciaYArchivo] Cargando diagrama con', nodesWithUsage.length, 'nodos y', edgesWithHandles.length, 'edges');
+        console.log('[usePersistenciaYArchivo] Edges cargados:', edgesWithHandles);
+        
+        setNodes(nodesWithUsage);
+        setEdges(edgesWithHandles);
         versionRef.current = d.version ?? null;
       } catch (err) {
         if (!isMounted) return;
@@ -301,8 +333,8 @@ ${rels}
             label: c.name, 
             attrs: c.attrs || [],
             usage: {
-              target: {},
-              source: {}
+              target: Object.fromEntries(TARGET_HANDLES.map(h => [h, 0])),
+              source: Object.fromEntries(SOURCE_HANDLES.map(h => [h, 0])),
             }
           },
         };
@@ -334,7 +366,10 @@ ${rels}
             data: { 
               label: aName, 
               attrs: [],
-              usage: { target: {}, source: {} }
+              usage: {
+                target: Object.fromEntries(TARGET_HANDLES.map(h => [h, 0])),
+                source: Object.fromEntries(SOURCE_HANDLES.map(h => [h, 0])),
+              }
             },
           });
         }
@@ -350,7 +385,10 @@ ${rels}
             data: { 
               label: bName, 
               attrs: [],
-              usage: { target: {}, source: {} }
+              usage: {
+                target: Object.fromEntries(TARGET_HANDLES.map(h => [h, 0])),
+                source: Object.fromEntries(SOURCE_HANDLES.map(h => [h, 0])),
+              }
             },
           });
         }
@@ -411,7 +449,19 @@ ${rels}
         return;
       }
       
-      setNodes(n);
+      // Asegurar que todos los nodos tengan el objeto usage inicializado
+      const nodesWithUsage = n.map(node => ({
+        ...node,
+        data: {
+          ...node.data,
+          usage: node.data?.usage || {
+            target: Object.fromEntries(TARGET_HANDLES.map(h => [h, 0])),
+            source: Object.fromEntries(SOURCE_HANDLES.map(h => [h, 0])),
+          }
+        }
+      }));
+      
+      setNodes(nodesWithUsage);
       setEdges(e);
       versionRef.current = (data.version ?? versionRef.current) || null;
 

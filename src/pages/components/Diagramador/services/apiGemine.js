@@ -4,7 +4,7 @@
 //   y DES-ESCAPA correctamente (sin duplicar backslashes) para que no queden \n literales.
 // - Parser local extendido: CRUD de entidades/atributos + 5 tipos de relación + clear_attrs/only id.
 
-const EMBEDDED_FALLBACK_KEY = "AIzaSyDRGJ3UXInnuy1Yu3OEw5Y6uMqeBMWLl3M";
+const EMBEDDED_FALLBACK_KEY = "AIzaSyArWEu6NN0i9e-9U8wSecSG9M50JppkZ5w";
 let RUNTIME_API_KEY = "";
 let RUNTIME_MODEL  = "";
 
@@ -512,13 +512,14 @@ function naiveParse(textRaw) {
     actions.push({ op: "update_attr", entity: T(ta[2]), old: T(ta[1]), attr: { name: T(ta[1]), type: T(ta[3]) } });
   }
 
-  // Asociación - Lenguaje natural
-  // Acepta: "relación Usuario 1..* - 0..1 Pedido", también: "conecta Usuario con Pedido", "que Usuario tenga Pedido"
-  const reRel = /(?:relaci[oó]n|conecta(?:r)?|vincular|que)\s+([A-Za-z_]\w*)\s+(?:(?:tenga|con)\s+)?([01]\.\.\*|0\.\.1|1\.\.\*|\*|n|1)?\s*[-–]?\s*([01]\.\.\*|0\.\.1|1\.\.\*|\*|n|1)?\s+([A-Za-z_]\w*)(?:\s*\(verbo:\s*([^)]+)\))?/gi;
+  // Asociación - Lenguaje natural MEJORADO
+  // Acepta: "relación Usuario 1..* - 0..1 Pedido", "conecta Usuario con Pedido", "asociación entre Ropa y Categoria"
+  const reRel = /(?:relaci[oó]n|asociaci[oó]n|conecta(?:r)?|vincular|que)(?:\s+entre)?\s+([A-Za-z_]\w*)\s+(?:(?:tenga|con|y)\s+)?([01]\.\.\*|0\.\.1|1\.\.\*|\*|n|1)?\s*[-–]?\s*([01]\.\.\*|0\.\.1|1\.\.\*|\*|n|1)?\s+([A-Za-z_]\w*)(?:\s*(?:\(verbo:?\s*|verbo:?\s*)([^)]+)\))?(?:\s+(?:verbo:?|con)\s*["']?([^"')\n]+)["']?)?/gi;
   let r;
   while ((r = reRel.exec(SRC)) !== null) {
-    const a = T(r[1]), mA = T(r[2]) || "1", mB = T(r[3]) || "1", b = T(r[4]), verb = T(r[5] || "");
-    actions.push({ op: "add_relation", a, b, mA, mB, verb, relKind: "ASSOC" });
+    const a = T(r[1]), mA = T(r[2]) || "1", mB = T(r[3]) || "1", b = T(r[4]);
+    const verb = T(r[5] || r[6] || "");
+    actions.push({ op: "add_relation", a, b, mA, mB, verb, relKind: "ASSOC", direction: "A->B" });
   }
 
   // N-M - Lenguaje natural
@@ -537,32 +538,41 @@ function naiveParse(textRaw) {
     actions.push({ op: "add_relation_associative", a: T(ae[1]), b: T(ae[2]), name: T(ae[3] || "") || undefined });
   }
 
-  // Herencia - Lenguaje natural
+  // Herencia - Lenguaje natural MEJORADO
   // Acepta: "herencia Empleado -> Persona", "que Empleado herede de Persona", "Empleado extiende Persona"
-  const reInhArrow = /(?:herencia|que)\s+([A-Za-z_]\w*)\s+(?:->|herede\s+de|extiende(?:r)?)\s+([A-Za-z_]\w*)/gi;
+  // NUEVO: "herencia entre Empleado y Persona"
+  const reInhArrow = /(?:herencia|que)(?:\s+entre)?\s+([A-Za-z_]\w*)\s+(?:->|y|con|herede\s+de|extiende(?:r)?)\s+([A-Za-z_]\w*)/gi;
   let hi;
   while ((hi = reInhArrow.exec(SRC)) !== null) {
-    actions.push({ op: "add_relation", a: T(hi[1]), b: T(hi[2]), relKind: "INHERIT" });
+    actions.push({ op: "add_relation", a: T(hi[1]), b: T(hi[2]), relKind: "INHERIT", direction: "A->B" });
   }
-  // Herencia con palabras - Ya cubierto arriba en la versión mejorada
 
-  // Dependencia - Lenguaje natural
+  // Dependencia - Lenguaje natural MEJORADO
   // Acepta: "dependencia Usuario -> Pedido", "que Usuario dependa de Pedido", "Usuario usa Pedido"
-  const reDepArrow = /(?:dependencia|que)\s+([A-Za-z_]\w*)\s+(?:->|dependa\s+de|usa|use)\s+([A-Za-z_]\w*)/gi;
+  // NUEVO: "dependencia entre Ropa y Categoria", "dependencia ropa categoria"
+  const reDepArrow = /(?:dependencia|que)\s+(?:entre\s+)?([A-Za-z_]\w*)\s+(?:->|y|con|dependa\s+de|usa(?:r)?|use)\s+([A-Za-z_]\w*)(?:\s+(?:verbo:?|con)\s*["']?([^"')\n]+)["']?)?/gi;
   let dep;
   while ((dep = reDepArrow.exec(SRC)) !== null) {
-    actions.push({ op: "add_relation", a: T(dep[1]), b: T(dep[2]), relKind: "DEPEND", direction: "A->B" });
+    const verb = T(dep[3] || "");
+    actions.push({ 
+      op: "add_relation", 
+      a: T(dep[1]), 
+      b: T(dep[2]), 
+      relKind: "DEPEND", 
+      direction: "A->B",
+      verb: verb || "depende de"
+    });
   }
 
-  // Agregación / Composición - Lenguaje natural
-  // Acepta: "agregación Usuario 1 - * Pedido", "composición Carro con Rueda", "que Carro contenga Rueda"
-  const reAggComp = /(?:agregaci[oó]n|composici[oó]n|que)\s+([A-Za-z_]\w*)\s+(?:contenga|tenga|con)?\s*([01]\.\.\*|0\.\.1|1\.\.\*|\*|1)?\s*[-–]?\s*([01]\.\.\*|0\.\.1|1\.\.\*|\*|1)?\s+([A-Za-z_]\w*)(?:.*?\b(?:lado|diamante)\b\s*(A|B))?/gi;
+  // Agregación / Composición - Lenguaje natural MEJORADO
+  // Acepta: "agregación Usuario 1 - * Pedido", "composición Carro con Rueda", "agregación entre A y B"
+  const reAggComp = /(?:agregaci[oó]n|composici[oó]n)(?:\s+entre)?\s+([A-Za-z_]\w*)\s+(?:contenga|tenga|con|y)?\s*([01]\.\.\*|0\.\.1|1\.\.\*|\*|1)?\s*[-–]?\s*([01]\.\.\*|0\.\.1|1\.\.\*|\*|1)?\s+([A-Za-z_]\w*)(?:.*?\b(?:lado|diamante|owning)\b\s*(A|B))?/gi;
   let ac;
   while ((ac = reAggComp.exec(SRC)) !== null) {
-    const kind = ac[1].toLowerCase().startsWith("agreg") ? "AGGR" : "COMP";
+    const kind = /agregaci/i.test(ac[0]) ? "AGGR" : "COMP";
     const a = T(ac[1]), mA = T(ac[2]) || "1", mB = T(ac[3]) || "1", b = T(ac[4]);
     const owning = T(ac[5] || "A");
-    actions.push({ op: "add_relation", a, b, mA, mB, relKind: kind, owning });
+    actions.push({ op: "add_relation", a, b, mA, mB, relKind: kind, owning, direction: "A->B" });
   }
 
   // Eliminar relación - Lenguaje natural
@@ -571,6 +581,64 @@ function naiveParse(textRaw) {
   let dr;
   while ((dr = reDelRel.exec(SRC)) !== null) {
     actions.push({ op: "remove_relation", a: T(dr[1]), b: T(dr[2]) });
+  }
+
+  // ⭐ PATRÓN COMODÍN GENÉRICO - Captura cualquier relación no específica
+  // Acepta: "composición de ropa y categoría", "relación usuario pedido", "A de B", "A con B"
+  // Este patrón se ejecuta AL FINAL para capturar todo lo que no se haya procesado antes
+  const reGeneric = /(?:^|\n)\s*([A-Za-z_]\w*)\s+(?:de|con|y|entre|->)\s+([A-Za-z_]\w*)(?:\s|$)/gi;
+  let gen;
+  const processedPairs = new Set();
+  
+  while ((gen = reGeneric.exec(SRC)) !== null) {
+    const a = T(gen[1]);
+    const b = T(gen[2]);
+    const pair = `${a.toLowerCase()}-${b.toLowerCase()}`;
+    
+    // Evitar duplicados
+    if (processedPairs.has(pair)) continue;
+    processedPairs.add(pair);
+    
+    // Detectar el tipo de relación por palabras clave en el texto
+    const textBefore = SRC.substring(Math.max(0, gen.index - 30), gen.index).toLowerCase();
+    
+    let relKind = "ASSOC"; // Por defecto asociación
+    let owning = "A";
+    let mA = "1";
+    let mB = "1";
+    
+    // Detectar tipo por palabras clave cercanas
+    if (/composici[oó]n/.test(textBefore)) {
+      relKind = "COMP";
+      owning = "B"; // El segundo (B) es el contenedor
+    } else if (/agregaci[oó]n/.test(textBefore)) {
+      relKind = "AGGR";
+      owning = "B";
+    } else if (/herencia|extiende|hereda/.test(textBefore)) {
+      relKind = "INHERIT";
+    } else if (/dependencia|depende/.test(textBefore)) {
+      relKind = "DEPEND";
+    }
+    
+    // Crear la relación con el tipo detectado
+    const relAction = {
+      op: "add_relation",
+      a,
+      b,
+      relKind,
+      direction: "A->B"
+    };
+    
+    // Solo agregar multiplicidades y owning si no es herencia o dependencia
+    if (relKind !== "INHERIT" && relKind !== "DEPEND") {
+      relAction.mA = mA;
+      relAction.mB = mB;
+      if (relKind === "AGGR" || relKind === "COMP") {
+        relAction.owning = owning;
+      }
+    }
+    
+    actions.push(relAction);
   }
 
   return actions;

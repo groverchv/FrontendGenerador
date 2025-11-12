@@ -44,10 +44,21 @@ function LienzoInner({
 
   // Debug: loguear edges cuando cambien
   useEffect(() => {
-    if (edges && edges.length > 0) {
-      console.log('📊 Edges en el lienzo:', edges);
-    }
-  }, [edges]);
+    console.log('🔄 LienzoDeDiagrama - Estado actualizado:', {
+      nodesCount: nodes?.length || 0,
+      edgesCount: edges?.length || 0,
+      nodes: nodes?.map(n => ({ id: n.id, label: n.data?.label, position: n.position })),
+      edges: edges?.map(e => ({ 
+        id: e.id, 
+        source: e.source, 
+        target: e.target, 
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle,
+        type: e.type,
+        data: e.data 
+      }))
+    });
+  }, [nodes, edges]);
 
   const fitAll = (opts = {}) => {
     if (!shouldAutoFit) return;
