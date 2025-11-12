@@ -67,8 +67,8 @@ export function makeSkeleton(projectName, packageBase) {
     </dependency>
 
     <dependency>
-      <groupId>com.mysql</groupId>
-      <artifactId>mysql-connector-j</artifactId>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
     </dependency>
 
@@ -179,14 +179,15 @@ public class ${appClass} {
 
   const props = `spring.application.name=${projectName}
 
-# Configuración MySQL (edítala a tu entorno)
-spring.datasource.url=jdbc:mysql://localhost:3306/${artifactId}
-spring.datasource.username=root
-spring.datasource.password= tu password
-spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+# Configuración PostgreSQL (edítala a tu entorno)
+spring.datasource.url=jdbc:postgresql://localhost:5432/${artifactId}
+spring.datasource.username=postgres
+spring.datasource.password=tu_password
+spring.datasource.driver-class-name=org.postgresql.Driver
 
 spring.jpa.hibernate.ddl-auto=update
 spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
 `;
 
   const corsConfig = `package ${packageBase}.Config;

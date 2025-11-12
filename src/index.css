@@ -1,6 +1,62 @@
 @import "tailwindcss";
 
-/* Estilos personalizados para scrollbar */
+/* ========================================
+   Optimizaciones para Móviles y Táctil
+   ======================================== */
+
+/* Smooth scrolling y mejor experiencia táctil */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+body {
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Optimización para inputs en móvil */
+input,
+textarea,
+select,
+button {
+  font-size: 16px; /* Previene zoom en iOS */
+}
+
+@media (min-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 14px;
+  }
+}
+
+/* Mejorar área de toque en elementos pequeños */
+button,
+a {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (max-width: 767px) {
+  button,
+  a {
+    min-height: 48px;
+    min-width: 48px;
+  }
+}
+
+/* ========================================
+   Estilos personalizados para scrollbar
+   ======================================== */
+
 .scrollbar-thin {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e0 #f7fafc;
@@ -9,6 +65,13 @@
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;
   height: 6px;
+}
+
+@media (max-width: 767px) {
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
@@ -24,3 +87,66 @@
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: #a0aec0;
 }
+
+/* ========================================
+   Utilidades adicionales responsive
+   ======================================== */
+
+/* Ocultar scrollbar pero mantener funcionalidad */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Safe area para dispositivos con notch */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Prevenir selección de texto en elementos interactivos */
+.no-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Animación suave para modales y paneles */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s ease-out;
+}
+

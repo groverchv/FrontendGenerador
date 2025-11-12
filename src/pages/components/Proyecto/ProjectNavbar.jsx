@@ -316,7 +316,7 @@ export default function ProjectNavbar({
           ) : (
             <>
               <SiFlutter className="w-5 h-5" />
-              <span>General Flutter</span>
+              <span>Generar Flutter</span>
             </>
           )}
         </button>
@@ -339,7 +339,7 @@ export default function ProjectNavbar({
           ) : (
             <>
               <SiSpringboot className="w-5 h-5 text-green-700" />
-              <span>General Spring Boot</span>
+              <span>Generar Spring Boot</span>
             </>
           )}
         </button>
