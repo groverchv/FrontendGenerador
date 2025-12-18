@@ -11,6 +11,7 @@ import { useNodesState, useEdgesState } from "reactflow";
 import LienzoDeDiagrama from "./SubDiagrama/LienzoDeDiagrama";
 import NodoClase from "./SubDiagrama/NodoClase";
 import AristaUML from "./SubDiagrama/AristaUML";
+import AristaNM from "./SubDiagrama/AristaNM";
 import PanelLateral from "./SubDiagrama/PanelLateral";
 import ModalIA from "./SubDiagrama/ModalIA";
 
@@ -34,7 +35,7 @@ import { SOURCE_HANDLES, TARGET_HANDLES } from "../../../constants";
 // ✅ DEFINIR TIPOS A NIVEL DE MÓDULO (fuera del componente)
 // Esto garantiza que las referencias sean 100% estables
 const NODE_TYPES = { classNode: NodoClase };
-const EDGE_TYPES = { uml: AristaUML };
+const EDGE_TYPES = { uml: AristaUML, nmAssoc: AristaNM };
 
 const Diagramador = forwardRef(function Diagramador(
   { projectId, projectName, sock },
@@ -215,6 +216,31 @@ const Diagramador = forwardRef(function Diagramador(
             const targetId = nodeIdMap[edgeData.target];
 
             if (sourceId && targetId) {
+              // Copiar los datos del edge
+              const edgeDataCopy = { ...edgeData.data } || {
+                mA: "1",
+                mB: "1",
+                verb: "",
+                relType: "1-1",
+                relKind: "ASSOC",
+                direction: "NONE"
+              };
+
+              // ⚠️ IMPORTANTE: Si es un edge nmAssoc, actualizar joinTableId al nuevo ID
+              if (edgeData.type === "nmAssoc" && edgeDataCopy.joinTableId) {
+                const mappedJoinTableId = nodeIdMap[edgeDataCopy.joinTableId];
+                if (mappedJoinTableId) {
+                  console.log(`[Diagramador] Mapeando joinTableId: ${edgeDataCopy.joinTableId} -> ${mappedJoinTableId}`);
+                  edgeDataCopy.joinTableId = mappedJoinTableId;
+
+                  // También actualizar la posición si existe en los nuevos nodos
+                  const joinNode = newNodes.find(n => n.id === mappedJoinTableId);
+                  if (joinNode) {
+                    edgeDataCopy.joinTablePosition = joinNode.position;
+                  }
+                }
+              }
+
               newEdges.push({
                 id: `e${Date.now()}-${index}`,
                 source: sourceId,
@@ -223,14 +249,7 @@ const Diagramador = forwardRef(function Diagramador(
                 targetHandle: edgeData.targetHandle || 'l1-t',
                 type: edgeData.type || "uml",
                 label: edgeData.label || "",
-                data: edgeData.data || {
-                  mA: "1",
-                  mB: "1",
-                  verb: "",
-                  relType: "1-1",
-                  relKind: "ASSOC",
-                  direction: "NONE"
-                }
+                data: edgeDataCopy
               });
             }
           });
@@ -451,81 +470,68 @@ const Diagramador = forwardRef(function Diagramador(
           scheduleSnapshot();
         }}
         onRelacionNM={({ aId, bId, nombreIntermedia }) => {
-          // Crear entidad intermedia
-          const intermediaId = String(Date.now());
+          // ═══════════════════════════════════════════════════════════════
+          // IMPLEMENTACIÓN DE CLASE DE ASOCIACIÓN UML (N-M)
+          // Patrón: Línea principal A──B con línea punteada ││ al centro
+          //         hacia la tabla intermedia
+          // ═══════════════════════════════════════════════════════════════
+
           const nodeA = nodes.find(n => n.id === aId);
           const nodeB = nodes.find(n => n.id === bId);
 
           if (!nodeA || !nodeB) return;
 
-          // Posición de la entidad intermedia (punto medio entre A y B)
+          // Calcular el punto medio entre A y B
           const midX = (nodeA.position.x + nodeB.position.x) / 2;
-          const midY = (nodeA.position.y + nodeB.position.y) / 2;
+          const midYLine = (nodeA.position.y + nodeB.position.y) / 2;
 
-          // Crear la entidad intermedia
-          setNodes((ns) =>
-            ns.concat({
-              id: intermediaId,
-              type: "classNode",
-              position: { x: midX, y: midY },
-              data: {
-                label: nombreIntermedia || `${nodeA.data.label}_${nodeB.data.label}`,
-                attrs: [],
-                usage: {
-                  target: Object.fromEntries(TARGET_HANDLES.map((h) => [h, 0])),
-                  source: Object.fromEntries(SOURCE_HANDLES.map((h) => [h, 0])),
-                }
-              },
-            })
-          );
+          // Posición de la tabla intermedia (debajo del punto medio)
+          const intermediaY = Math.max(nodeA.position.y, nodeB.position.y) + 180;
 
-          // Crear primera relación: A -> Intermedia (1-N)
-          const edge1Id = "e" + Date.now();
-          const sourceHandle1 = findBestHandle(aId, edges, true);
-          const targetHandle1 = findBestHandle(intermediaId, [], false);
+          // IDs únicos
+          const timestamp = Date.now();
+          const intermediaId = String(timestamp);
 
-          const edge1 = {
-            id: edge1Id,
+          // 1) CREAR LA LÍNEA PRINCIPAL + PUNTEADA entre A y B (usa AristaNM)
+          const edgePrincipal = {
+            id: `e${aId}-${bId}-nm`,
             source: aId,
-            target: intermediaId,
-            sourceHandle: sourceHandle1,
-            targetHandle: targetHandle1,
-            type: "uml",
+            target: bId,
+            sourceHandle: findBestHandle(aId, edges, true),
+            targetHandle: findBestHandle(bId, edges, false),
+            type: "nmAssoc",  // Usa AristaNM que dibuja ambas líneas
             data: {
-              mA: "1",
-              mB: "*",
-              relType: "1-N",
-              relKind: "ASSOC",
-              direction: "NONE",
+              mA: "0..*",      // Multiplicidad lado A
+              mB: "0..*",      // Multiplicidad lado B  
+              relType: "N-M",
+              relKind: "NM_ASSOC",
+              joinTableId: intermediaId,
+              joinTablePosition: { x: midX - 80, y: intermediaY },
             },
           };
 
-          // Crear segunda relación: B -> Intermedia (1-N)
-          const edge2Id = "e" + (Date.now() + 1);
-          const sourceHandle2 = findBestHandle(bId, edges, true);
-          const targetHandle2 = findBestHandle(intermediaId, [edge1], false);
-
-          const edge2 = {
-            id: edge2Id,
-            source: bId,
-            target: intermediaId,
-            sourceHandle: sourceHandle2,
-            targetHandle: targetHandle2,
-            type: "uml",
+          // 2) CREAR LA TABLA INTERMEDIA
+          const newIntermediaNode = {
+            id: intermediaId,
+            type: "classNode",
+            position: { x: midX - 80, y: intermediaY },
             data: {
-              mA: "1",
-              mB: "*",
-              relType: "1-N",
-              relKind: "ASSOC",
-              direction: "NONE",
+              label: nombreIntermedia || `${nodeA.data.label}_${nodeB.data.label}`,
+              attrs: [],
+              isJoinTable: true,
+              usage: {
+                target: Object.fromEntries(TARGET_HANDLES.map((h) => [h, 0])),
+                source: Object.fromEntries(SOURCE_HANDLES.map((h) => [h, 0])),
+              }
             },
           };
 
-          // Agregar ambas aristas
-          setEdges((es) => es.concat([edge1, edge2]));
+          // Agregar nodo y edge (AristaNM dibuja internamente la línea punteada)
+          setNodes((ns) => ns.concat(newIntermediaNode));
+          setEdges((es) => es.concat([edgePrincipal]));
 
-          // Actualizar el uso de handles en TODOS los nodos
-          setNodes((ns) => updateNodesWithHandleUsage(ns, [...edges, edge1, edge2]));
+          // Actualizar el uso de handles
+          setNodes((ns) => updateNodesWithHandleUsage(ns, [...edges, edgePrincipal]));
 
           scheduleSnapshot();
         }}

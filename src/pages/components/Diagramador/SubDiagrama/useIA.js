@@ -320,7 +320,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
       if (!exist) {
         const pos = {
           x: (aNode.position?.x + bNode.position?.x) / 2 || 180,
-          y: (aNode.position?.y + bNode.position?.y) / 2 || 180
+          y: Math.max(aNode.position?.y || 100, bNode.position?.y || 100) + 150
         };
 
         // Inicializar usage para la tabla intermedia
@@ -359,13 +359,20 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
 
           const edgeAJ = {
             id: `e${aNode.id}-${joinId}`,
-            source: aNode.id,
-            target: joinId,
-            sourceHandle: handleA,
-            targetHandle: handleJ1,
-            label: '1..*',
+            source: joinId,          // DESDE la tabla intermedia
+            target: aNode.id,        // HACIA la entidad A
+            sourceHandle: handleJ1,
+            targetHandle: handleA,
+            label: '0..*',
             type: 'uml',
-            data: { mA: "1..*", mB: "1", relKind: "ASSOC", relType: "1-N" }
+            data: {
+              mA: "*",       // Lado de la intermedia
+              mB: "0..*",    // Lado de la entidad
+              relKind: "DEPEND",  // LÍNEA PUNTEADA
+              relType: "N-M",
+              direction: "A->B",
+              isNMRelation: true
+            }
           };
 
           // Actualizar usage
@@ -426,13 +433,20 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
 
           const edgeBJ = {
             id: `e${bNode.id}-${joinId}`,
-            source: bNode.id,
-            target: joinId,
-            sourceHandle: handleB,
-            targetHandle: handleJ2,
-            label: '1..*',
+            source: joinId,          // DESDE la tabla intermedia
+            target: bNode.id,        // HACIA la entidad B
+            sourceHandle: handleJ2,
+            targetHandle: handleB,
+            label: '0..*',
             type: 'uml',
-            data: { mA: "1..*", mB: "1", relKind: "ASSOC", relType: "1-N" }
+            data: {
+              mA: "*",       // Lado de la intermedia
+              mB: "0..*",    // Lado de la entidad
+              relKind: "DEPEND",  // LÍNEA PUNTEADA
+              relType: "N-M",
+              direction: "A->B",
+              isNMRelation: true
+            }
           };
 
           // Actualizar usage
@@ -498,13 +512,20 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
 
         const edgeAJ = {
           id: `e${aNode.id}-${joinId}`,
-          source: aNode.id,
-          target: joinId,
-          sourceHandle: handleA,
-          targetHandle: handleJ1,
-          label: '1..*',
+          source: joinId,          // DESDE la tabla intermedia
+          target: aNode.id,        // HACIA la entidad A
+          sourceHandle: handleJ1,
+          targetHandle: handleA,
+          label: '0..*',
           type: 'uml',
-          data: { mA: "1..*", mB: "1", relKind: "ASSOC", relType: "1-N" }
+          data: {
+            mA: "*",
+            mB: "0..*",
+            relKind: "DEPEND",
+            relType: "N-M",
+            direction: "A->B",
+            isNMRelation: true
+          }
         };
 
         setNodes(updatedNodes =>
@@ -565,13 +586,20 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
 
         const edgeBJ = {
           id: `e${bNode.id}-${joinId}`,
-          source: bNode.id,
-          target: joinId,
-          sourceHandle: handleB,
-          targetHandle: handleJ2,
-          label: '1..*',
+          source: joinId,          // DESDE la tabla intermedia
+          target: bNode.id,        // HACIA la entidad B
+          sourceHandle: handleJ2,
+          targetHandle: handleB,
+          label: '0..*',
           type: 'uml',
-          data: { mA: "1..*", mB: "1", relKind: "ASSOC", relType: "1-N" }
+          data: {
+            mA: "*",
+            mB: "0..*",
+            relKind: "DEPEND",
+            relType: "N-M",
+            direction: "A->B",
+            isNMRelation: true
+          }
         };
 
         setNodes(updatedNodes =>

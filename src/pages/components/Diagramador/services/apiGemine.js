@@ -356,27 +356,19 @@ const MODEL_DIAGRAM = "gemini-2.5-flash";         // DIAGRAMAS: Modificaciones s
 const MODEL_DEFAULT = "gemini-2.5-flash";         // DEFAULT: Tareas rutinarias (ACTUALIZADO a 2.5)
 
 // Modelos de fallback para código (ordenados por capacidad de generar JSON válido)
-// ⚠️ ACTUALIZADO: Solo modelos disponibles en Gemini API (dic 2024)
+// ⚠️ ACTUALIZADO: Solo gemini-2.5-flash disponible (dic 2024) - modelos 1.5 y 2.0-exp descontinuados
 const CODE_FALLBACK_MODELS = [
-  "gemini-2.5-flash",         // Mejor para código - JSON estructurado
-  "gemini-2.0-flash-exp",     // Experimental pero rápido
-  "gemini-1.5-flash",         // Estable y rápido
-  "gemini-1.5-pro",           // Más capacidad pero más lento
+  "gemini-2.5-flash",         // ✅ ÚNICO modelo funcional - JSON estructurado
 ];
 
 // Modelos de fallback para visión (ordenados por capacidad)
 const VISION_FALLBACK_MODELS = [
-  "gemini-2.5-flash",         // Mejor calidad
-  "gemini-2.0-flash-exp",     // Experimental
-  "gemini-1.5-flash",         // Estable
-  "gemini-1.5-pro",           // Mayor capacidad
+  "gemini-2.5-flash",         // ✅ ÚNICO modelo funcional
 ];
 
 // Modelos de fallback generales
 const FALLBACK_MODELS = [
-  "gemini-2.5-flash",
-  "gemini-2.0-flash-exp",
-  "gemini-1.5-flash",
+  "gemini-2.5-flash",         // ✅ ÚNICO modelo funcional
 ];
 
 // Variables de compatibilidad para el resto del código
@@ -687,7 +679,8 @@ async function callGeminiJSON(promptText, { maxOutputTokens = 8000, taskType = "
 
         // Verificar si la respuesta fue truncada
         const finishReason = json?.candidates?.[0]?.finishReason;
-        if (finishReason === "MAX_TOKENS") {
+        const wasTruncated = finishReason === "MAX_TOKENS";
+        if (wasTruncated) {
           console.warn(`[AI-JSON] ⚠️ Respuesta truncada por MAX_TOKENS`);
         }
 
@@ -732,7 +725,17 @@ async function callGeminiJSON(promptText, { maxOutputTokens = 8000, taskType = "
               const last = cleaned.lastIndexOf("}");
               if (first >= 0 && last > first) {
                 const jsonOnly = cleaned.slice(first, last + 1);
-                return JSON.parse(jsonOnly);
+                try {
+                  return JSON.parse(jsonOnly);
+                } catch {
+                  // Estrategia 4: Si está truncado, devolver el texto para rescate manual
+                  if (wasTruncated) {
+                    console.log(`[AI-JSON] 🔧 Respuesta truncada, devolviendo para rescate manual...`);
+                    // Devolver un objeto especial que indica truncamiento
+                    const truncatedResult = { _truncated: true, _rawText: txt };
+                    return truncatedResult;
+                  }
+                }
               }
               throw parseErr; // Re-lanzar error original si nada funciona
             }
@@ -943,6 +946,22 @@ export async function generateSpringBootCode(promptText) {
       maxOutputTokens: MAX_TOKENS,
       taskType: "code"
     });
+
+    // Manejar respuesta truncada - intentar rescate
+    if (parsed?._truncated && parsed?._rawText) {
+      console.log("[generator] 🔧 Respuesta truncada detectada, intentando rescate...");
+      const rescued = salvageFilesFromText(parsed._rawText);
+      if (rescued) {
+        const norm = normalizeFilesMap(rescued);
+        const filesCount = Object.keys(norm).length;
+        if (filesCount > 0) {
+          const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+          console.warn(`[generator] ⚠️ JSON truncado — ${filesCount} archivos rescatados en ${duration}s`);
+          return norm;
+        }
+      }
+      throw new Error("No se pudieron rescatar archivos de respuesta truncada");
+    }
 
     if (parsed?.files && typeof parsed.files === "object") {
       const filesCount = Object.keys(parsed.files).length;

@@ -169,6 +169,20 @@ REGLAS DE EXTRACCIÓN - COPIA EXACTA
    - Si hay triángulo: from=clase hija, to=clase padre
    - Si no hay símbolos: from=la clase de la izquierda/arriba
 
+🔷 CLASE DE ASOCIACIÓN (N-M) - DETECCIÓN ESPECIAL:
+1. Si ves una línea SÓLIDA entre dos clases Y una línea PUNTEADA que sale del CENTRO de esa línea hacia una tercera clase:
+   - Esto es una CLASE DE ASOCIACIÓN (relación muchos-a-muchos)
+   - Identifica las DOS clases conectadas por la línea sólida
+   - Identifica la TERCERA clase conectada por la línea punteada (tabla intermedia)
+   - Crea UNA relación con:
+     - from = primera clase de la línea sólida
+     - to = segunda clase de la línea sólida  
+     - type = "association"
+     - multiplicityFrom = "0..*"
+     - multiplicityTo = "0..*"
+     - requiresJoinTable = true
+     - suggestedJoinTableName = nombre de la tercera clase (la conectada con línea punteada)
+
 ⚠️ ERRORES A EVITAR:
 - NO cambies los nombres (si dice "Usuario" no lo cambies a "User")
 - NO cambies los tipos (si dice "int" no lo cambies a "Integer")
@@ -737,117 +751,102 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
 
       // Verificar si la IA detectó que necesita tabla intermedia
       if (relation.requiresJoinTable !== false) {
-        // Crear tabla intermedia
-        const joinTableName = relation.suggestedJoinTableName ||
-          `${relation.from}_${relation.to}`;
-        const joinNodeId = `node-join-${Date.now()}-${index}`;
+        // PRIMERO: Buscar si ya existe una tabla intermedia en las clases escaneadas
+        // Puede ser: "A_B", "B_A", "AB", "BA" o el nombre sugerido por la IA
+        const possibleJoinNames = [
+          relation.suggestedJoinTableName,
+          `${relation.from}_${relation.to}`,
+          `${relation.to}_${relation.from}`,
+          `${relation.from}${relation.to}`,
+          `${relation.to}${relation.from}`,
+        ].filter(Boolean).map(n => n.toLowerCase());
 
-        classNameToId[joinTableName] = joinNodeId;
+        // Buscar en los nodos existentes
+        let existingJoinNode = null;
+        let existingJoinNodeId = null;
 
-        // Calcular posición de la tabla intermedia (punto medio entre las dos clases)
-        const sourceNode = nodes.find(n => classNameToId[relation.from] === n.id);
-        const targetNode = nodes.find(n => classNameToId[relation.to] === n.id);
-
-        let joinPosition = { x: 300, y: 300 };
-        if (sourceNode?.position && targetNode?.position) {
-          joinPosition = {
-            x: (sourceNode.position.x + targetNode.position.x) / 2,
-            y: (sourceNode.position.y + targetNode.position.y) / 2 + 150 // Offset hacia abajo
-          };
+        for (const node of nodes) {
+          const nodeLabelLower = (node.label || "").toLowerCase().replace(/[_\s]/g, "");
+          for (const possibleName of possibleJoinNames) {
+            const cleanPossibleName = possibleName.replace(/[_\s]/g, "");
+            if (nodeLabelLower === cleanPossibleName || nodeLabelLower.includes(cleanPossibleName)) {
+              existingJoinNode = node;
+              existingJoinNodeId = node.id;
+              console.log(`[imageProcessor] Tabla intermedia existente encontrada: ${node.label}`);
+              break;
+            }
+          }
+          if (existingJoinNode) break;
         }
 
-        // Crear nodo para tabla intermedia
-        nodes.push({
-          id: joinNodeId,
-          label: joinTableName,
-          attrs: [
-            { name: "id", type: "Integer" },
-            { name: `${relation.from.toLowerCase()}Id`, type: "Integer" },
-            { name: `${relation.to.toLowerCase()}Id`, type: "Integer" }
-          ],
-          position: joinPosition,
-          isJoinTable: true
-        });
+        let joinNodeId, joinPosition;
 
-        // Inicializar registro de handles para la tabla intermedia
-        handleUsage[joinNodeId] = {
-          source: new Set(),
-          target: new Set()
-        };
+        if (existingJoinNode) {
+          // Usar la tabla intermedia existente
+          joinNodeId = existingJoinNodeId;
+          joinPosition = existingJoinNode.position;
+          console.log(`[imageProcessor] Usando tabla intermedia existente: ${existingJoinNode.label}`);
+        } else {
+          // Crear nueva tabla intermedia solo si no existe
+          const joinTableName = relation.suggestedJoinTableName ||
+            `${relation.from}_${relation.to}`;
+          joinNodeId = `node-join-${Date.now()}-${index}`;
 
-        // Calcular handles para las relaciones con la tabla intermedia, considerando handles ocupados
-        const sourceToJoinSourceHandle = getBestHandleForConnection(
-          sourceNode.position,
-          joinPosition,
-          true,
-          handleUsage[sourceId]?.source
-        );
-        const sourceToJoinTargetHandle = getBestHandleForConnection(
-          sourceNode.position,
-          joinPosition,
-          false,
-          handleUsage[joinNodeId]?.target
-        );
+          classNameToId[joinTableName] = joinNodeId;
 
-        const targetToJoinSourceHandle = getBestHandleForConnection(
-          targetNode.position,
-          joinPosition,
-          true,
-          handleUsage[targetId]?.source
-        );
-        const targetToJoinTargetHandle = getBestHandleForConnection(
-          targetNode.position,
-          joinPosition,
-          false,
-          handleUsage[joinNodeId]?.target
-        );
+          // Calcular posición de la tabla intermedia (punto medio entre las dos clases)
+          const sourceNode = nodes.find(n => classNameToId[relation.from] === n.id);
+          const targetNode = nodes.find(n => classNameToId[relation.to] === n.id);
 
-        // Marcar handles como ocupados
-        handleUsage[sourceId]?.source.add(sourceToJoinSourceHandle);
-        handleUsage[joinNodeId]?.target.add(sourceToJoinTargetHandle);
-        handleUsage[targetId]?.source.add(targetToJoinSourceHandle);
-        handleUsage[joinNodeId]?.target.add(targetToJoinTargetHandle);
+          joinPosition = { x: 300, y: 300 };
+          if (sourceNode?.position && targetNode?.position) {
+            joinPosition = {
+              x: (sourceNode.position.x + targetNode.position.x) / 2,
+              y: (sourceNode.position.y + targetNode.position.y) / 2 + 150 // Offset hacia abajo
+            };
+          }
 
-        // Crear dos relaciones 1-N en lugar de una N-M
-        // Relación 1: from -> joinTable (1 a N)
+          // Crear nodo para tabla intermedia
+          nodes.push({
+            id: joinNodeId,
+            label: joinTableName,
+            attrs: [
+              { name: "id", type: "Integer" },
+              { name: `${relation.from.toLowerCase()}Id`, type: "Integer" },
+              { name: `${relation.to.toLowerCase()}Id`, type: "Integer" }
+            ],
+            position: joinPosition,
+            isJoinTable: true
+          });
+
+          // Inicializar registro de handles para la tabla intermedia (solo si es nueva)
+          handleUsage[joinNodeId] = handleUsage[joinNodeId] || {
+            source: new Set(),
+            target: new Set()
+          };
+        }  // FIN del else (crear tabla nueva)
+
+        // Crear UN SOLO edge nmAssoc (funciona tanto si la tabla existe como si se creó)
         edges.push({
-          id: `edge-${Date.now()}-${index}-1`,
+          id: `edge-nm-${Date.now()}-${index}`,
           source: sourceId,
-          target: joinNodeId,
-          sourceHandle: sourceToJoinSourceHandle,
-          targetHandle: sourceToJoinTargetHandle,
-          type: "uml",
-          label: relation.label ? `${relation.label} (1)` : "",
+          target: targetId,
+          sourceHandle: sourceHandle,
+          targetHandle: targetHandle,
+          type: "nmAssoc",  // Tipo especial que dibuja línea + punteada al centro
+          label: relation.label || "",
           data: {
-            mA: "1",
-            mB: "*",
-            relKind: "ASSOC",
-            relType: "1-N",
-            direction: "NONE",
+            mA: "0..*",
+            mB: "0..*",
+            relKind: "NM_ASSOC",
+            relType: "N-M",
+            joinTableId: joinNodeId,
+            joinTablePosition: joinPosition,
             verb: relation.label || ""
           }
         });
 
-        // Relación 2: to -> joinTable (1 a N)
-        edges.push({
-          id: `edge-${Date.now()}-${index}-2`,
-          source: targetId,
-          target: joinNodeId,
-          sourceHandle: targetToJoinSourceHandle,
-          targetHandle: targetToJoinTargetHandle,
-          type: "uml",
-          label: relation.label ? `${relation.label} (2)` : "",
-          data: {
-            mA: "1",
-            mB: "*",
-            relKind: "ASSOC",
-            relType: "1-N",
-            direction: "NONE",
-            verb: relation.label || ""
-          }
-        });
-
-        // No creamos la relación N-M directa, solo las dos 1-N
+        // No creamos edges adicionales, el nmAssoc dibuja todo
         return;
       }
     } else if (isMany(mFrom) && isOne(mTo)) {
