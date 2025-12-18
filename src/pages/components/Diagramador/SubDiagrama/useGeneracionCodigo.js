@@ -1,5 +1,5 @@
 // src/views/proyectos/Diagramador/SubDiagrama/useGeneracionCodigo.js
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { buildPrompt } from "../generador/promt";
 
 // Import robusto: soporta export nombrado y/o default de skeleton.js
@@ -127,6 +127,10 @@ export default function useGeneracionCodigo({
   nodes,
   edges,
 }) {
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState("");
+  const [lastError, setLastError] = useState(null);
+
   const model = useMemo(
     () => normalizeModel({ projectName, packageBase, nodes, edges }),
     [projectName, packageBase, nodes, edges]
@@ -134,22 +138,74 @@ export default function useGeneracionCodigo({
 
   const handleGenerate = useCallback(
     async (skipPaths = []) => {
-      // Esqueleto base (pom, Application, CORS, properties)
-      const skeleton = makeSkeleton(projectName, packageBase);
+      // Validación previa
+      if (!nodes || nodes.length === 0) {
+        const error = new Error("No hay entidades en el diagrama. Agrega al menos una entidad.");
+        setLastError(error.message);
+        throw error;
+      }
 
-      // Prompt para generar archivos de Model/Repository/Service/Controller
-      const promptText = buildPrompt(model, skipPaths);
+      setIsGenerating(true);
+      setLastError(null);
+      setGenerationProgress("🏗️ Generando estructura base...");
 
-      // Llamada al generador (con rescate/ordenado ya manejado en apiGemine)
-      const deltaFiles = await generateSpringBootCode(promptText);
+      try {
+        // Esqueleto base (pom, Application, CORS, properties)
+        const skeleton = makeSkeleton(projectName, packageBase);
+        console.log("[useGeneracionCodigo] ✅ Skeleton generado:", Object.keys(skeleton).length, "archivos");
 
-      // Unimos y descargamos
-      const files = { ...skeleton, ...deltaFiles };
-      const zipName = `${projectName.replace(/[^\w.-]+/g, "_")}.zip`;
-      await downloadAsZip(files, zipName); // <- zip.js acepta 2 argumentos
+        // Prompt para generar archivos de Model/Repository/Service/Controller
+        setGenerationProgress("📝 Construyendo prompt para IA...");
+        const promptText = buildPrompt(model, skipPaths);
+
+        // Llamada al generador (con rescate/ordenado ya manejado en apiGemine)
+        setGenerationProgress("🤖 Generando código con IA (esto puede tardar)...");
+        const deltaFiles = await generateSpringBootCode(promptText);
+        
+        // Validar respuesta de IA
+        if (!deltaFiles || typeof deltaFiles !== "object") {
+          throw new Error("La IA no devolvió archivos válidos");
+        }
+        
+        const deltaCount = Object.keys(deltaFiles).length;
+        console.log("[useGeneracionCodigo] ✅ IA generó:", deltaCount, "archivos");
+        
+        if (deltaCount === 0) {
+          console.warn("[useGeneracionCodigo] ⚠️ La IA no generó archivos, usando solo skeleton");
+        }
+
+        // Unimos y descargamos
+        setGenerationProgress("📦 Comprimiendo archivos...");
+        const files = { ...skeleton, ...deltaFiles };
+        const totalFiles = Object.keys(files).length;
+        console.log("[useGeneracionCodigo] 📦 Total de archivos a comprimir:", totalFiles);
+        
+        const zipName = `${projectName.replace(/[^\w.-]+/g, "_")}.zip`;
+        await downloadAsZip(files, zipName);
+        
+        setGenerationProgress(`✅ ¡Listo! ${totalFiles} archivos generados`);
+        console.log("[useGeneracionCodigo] ✅ ZIP descargado exitosamente");
+        
+        return { success: true, filesCount: totalFiles };
+        
+      } catch (error) {
+        console.error("[useGeneracionCodigo] ❌ Error:", error);
+        setLastError(error.message);
+        setGenerationProgress(`❌ Error: ${error.message}`);
+        throw error;
+      } finally {
+        setIsGenerating(false);
+      }
     },
-    [model, projectName, packageBase]
+    [model, projectName, packageBase, nodes]
   );
 
-  return { model, handleGenerate };
+  return { 
+    model, 
+    handleGenerate,
+    isGenerating,
+    generationProgress,
+    lastError,
+    clearError: () => setLastError(null)
+  };
 }

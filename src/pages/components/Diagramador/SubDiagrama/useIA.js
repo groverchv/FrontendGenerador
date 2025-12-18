@@ -1,7 +1,7 @@
 // Hook IA: ahora entiende "add_attrs_smart" y reemplaza listas genéricas por nombres reales.
 
 import { getDeltaFromUserText } from "../services/apiGemine";
-import { buildPrompt2 } from "../generador/promt2";
+import { buildPrompt2 } from "../components/AsistenteIA/ReglasPromt";
 import {
   cohereRelation,
   ensureCoherentAttrs,
@@ -16,24 +16,34 @@ import { applyAutoLayout, optimizeEdgeCrossings } from "./autoLayout";
 import { SOURCE_HANDLES, TARGET_HANDLES } from "../../../../constants";
 
 const REL_KIND_ALIASES = new Map([
+  // Valores canónicos (identidad)
+  ["ASSOC", "ASSOC"],
+  ["AGGR", "AGGR"],
+  ["COMP", "COMP"],
+  ["INHERIT", "INHERIT"],
+  ["DEPEND", "DEPEND"],
+  // Aliases para ASSOC
   ["ASSOCIATION", "ASSOC"],
   ["ASOCIACION", "ASSOC"],
   ["RELACION", "ASSOC"],
   ["RELATION", "ASSOC"],
+  // Aliases para AGGR
   ["AGGREGATION", "AGGR"],
   ["AGREGACION", "AGGR"],
   ["AGREGATE", "AGGR"],
   ["AGREGADO", "AGGR"],
+  // Aliases para COMP
   ["COMPOSITION", "COMP"],
   ["COMPOSICION", "COMP"],
   ["COMPOSITE", "COMP"],
+  // Aliases para INHERIT
   ["INHERITANCE", "INHERIT"],
   ["HERENCIA", "INHERIT"],
   ["GENERALIZACION", "INHERIT"],
   ["GENERALIZATION", "INHERIT"],
+  // Aliases para DEPEND
   ["DEPENDENCY", "DEPEND"],
   ["DEPENDENCIA", "DEPEND"],
-  ["DEPEND", "DEPEND"],
 ]);
 
 const normalizeRelKind = (raw) => {
@@ -42,13 +52,39 @@ const normalizeRelKind = (raw) => {
   const ascii = base.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   return REL_KIND_ALIASES.get(base) || REL_KIND_ALIASES.get(ascii) || "ASSOC";
 };
-const norm = (s="") => s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
-const isGeneric = (n="") => /^((atribu|propi|campo)[a-z]*)\d+$/i.test(n);
+const norm = (s = "") => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/\s+/g, "");
+const isGeneric = (n = "") => /^((atribu|propi|campo)[a-z]*)\d+$/i.test(n);
+
+// Función mejorada para buscar entidad por nombre flexible
+// Acepta "clase 1", "Clase1", "class1", "Class1" y encuentra la entidad correcta
+const findNodeByFlexibleName = (nodes, searchName) => {
+  const normalizedSearch = norm(searchName);
+
+  // 1. Búsqueda exacta normalizada
+  let found = nodes.find(n => norm(n?.data?.label) === normalizedSearch);
+  if (found) return found;
+
+  // 2. Normalizar "clase 1" a "clase1" y buscar
+  const withoutSpaces = normalizedSearch.replace(/\s+/g, "");
+  found = nodes.find(n => norm(n?.data?.label).replace(/\s+/g, "") === withoutSpaces);
+  if (found) return found;
+
+  // 3. Buscar ignorando prefijos comunes (class, clase, entity, entidad)
+  const withoutPrefix = normalizedSearch.replace(/^(class|clase|entity|entidad)/i, "").trim();
+  if (withoutPrefix) {
+    found = nodes.find(n => {
+      const label = norm(n?.data?.label).replace(/^(class|clase|entity|entidad)/i, "").trim();
+      return label === withoutPrefix || label.replace(/\s+/g, "") === withoutPrefix.replace(/\s+/g, "");
+    });
+  }
+
+  return found;
+};
 
 export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapshot }) {
-  const findByName = (name) => nodes.find(n => norm(n?.data?.label) === norm(name));
+  const findByName = (name) => findNodeByFlexibleName(nodes, name);
 
-  const upsertEntity = (rawName, attrs=[]) => {
+  const upsertEntity = (rawName, attrs = []) => {
     const name = normalizeEntityName(rawName);
     const ex = findByName(name);
     const attrsFixed = ensureCoherentAttrs(attrs);
@@ -61,24 +97,24 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
         else map.set(k, incoming);
       }
       const merged = ensureCoherentAttrs(Array.from(map.values()));
-      setNodes(ns => ns.map(n => n.id===ex.id ? { ...n, data:{ ...n.data, label:name, attrs: merged } } : n));
+      setNodes(ns => ns.map(n => n.id === ex.id ? { ...n, data: { ...n.data, label: name, attrs: merged } } : n));
       return ex.id;
     }
     const id = "n" + Date.now() + Math.random().toString(36).slice(2, 6);
     const x = 120 + nodes.length * 40, y = 120 + nodes.length * 30;
-    
+
     // Inicializar usage para tracking de handles
     const initialUsage = {
       target: Object.fromEntries(TARGET_HANDLES.map(h => [h, 0])),
       source: Object.fromEntries(SOURCE_HANDLES.map(h => [h, 0])),
     };
-    
-    setNodes(ns => ns.concat({ 
-      id, 
-      type:"classNode", 
-      position:{x,y}, 
-      data:{ 
-        label:name, 
+
+    setNodes(ns => ns.concat({
+      id,
+      type: "classNode",
+      position: { x, y },
+      data: {
+        label: name,
         attrs: ensureCoherentAttrs(attrsFixed),
         usage: initialUsage
       }
@@ -86,20 +122,20 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
     return id;
   };
 
-  const setEntityAttrs = (rawName, attrs=[]) => {
+  const setEntityAttrs = (rawName, attrs = []) => {
     const name = normalizeEntityName(rawName);
     const ex = findByName(name); if (!ex) return;
-    setNodes(ns => ns.map(n => n.id===ex.id ? { ...n, data:{ ...n.data, attrs: ensureCoherentAttrs(attrs) } } : n));
+    setNodes(ns => ns.map(n => n.id === ex.id ? { ...n, data: { ...n.data, attrs: ensureCoherentAttrs(attrs) } } : n));
   };
 
   const removeAttr = (rawName, attrName) => {
     const name = normalizeEntityName(rawName);
     const ex = findByName(name); if (!ex) return;
     const out = (ex.data?.attrs || []).filter(a => norm(a.name) !== norm(attrName));
-    setNodes(ns => ns.map(n => n.id===ex.id ? { ...n, data:{ ...n.data, attrs: ensureCoherentAttrs(out) } } : n));
+    setNodes(ns => ns.map(n => n.id === ex.id ? { ...n, data: { ...n.data, attrs: ensureCoherentAttrs(out) } } : n));
   };
 
-  const updateAttr = (rawName, oldName, next={}) => {
+  const updateAttr = (rawName, oldName, next = {}) => {
     const name = normalizeEntityName(rawName);
     const ex = findByName(name); if (!ex) return;
     const arr = (ex.data?.attrs || []).map(a => {
@@ -108,7 +144,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
       const tt = next.type ? normalizeType(next.type) : a.type;
       return { name: nn, type: tt };
     });
-    setNodes(ns => ns.map(n => n.id===ex.id ? { ...n, data:{ ...n.data, attrs: ensureCoherentAttrs(arr) } } : n));
+    setNodes(ns => ns.map(n => n.id === ex.id ? { ...n, data: { ...n.data, attrs: ensureCoherentAttrs(arr) } } : n));
   };
 
   // Función para encontrar el siguiente handle libre en el estado ACTUAL
@@ -140,20 +176,29 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
     return bestHandle;
   };
 
-  const addRelationSimple = (A,B,opts={}) => {
-    const coh = cohereRelation({ aName:A, bName:B, ...opts });
+  const addRelationSimple = (A, B, opts = {}) => {
+    // DEBUG: Log los valores entrantes para verificar relKind
+    console.log(`[addRelationSimple] A="${A}", B="${B}", opts.relKind="${opts.relKind}"`);
+
+    // Preservar explícitamente relKind de opts ANTES de llamar cohereRelation
+    const inputRelKind = opts.relKind || "ASSOC";
+    const coh = cohereRelation({ aName: A, bName: B, relKind: inputRelKind, ...opts });
     const relKind = normalizeRelKind(coh.relKind);
-    
+
+    console.log(`[addRelationSimple] relKind normalizado="${relKind}"`);
+
+
     // Variables para almacenar los handles seleccionados
     let selectedSourceHandle = null;
     let selectedTargetHandle = null;
     let foundANode = null;
     let foundBNode = null;
-    
+
     // PASO 1: Obtener información de los nodos y preparar el edge
     setNodes(currentNodes => {
-      foundANode = currentNodes.find(n => norm(n?.data?.label) === norm(coh.aName));
-      foundBNode = currentNodes.find(n => norm(n?.data?.label) === norm(coh.bName));
+      // Usar findNodeByFlexibleName para mejor matching de nombres ("clase1" -> "Class1")
+      foundANode = findNodeByFlexibleName(currentNodes, coh.aName);
+      foundBNode = findNodeByFlexibleName(currentNodes, coh.bName);
 
       if (!foundANode || !foundBNode) {
         console.warn(`[useIA] No se puede crear relación: entidad no encontrada (${coh.aName} → ${coh.bName})`);
@@ -164,13 +209,13 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
       // Pre-calcular handles libres
       selectedSourceHandle = findFreeHandle(foundANode.id, "source", currentNodes);
       selectedTargetHandle = findFreeHandle(foundBNode.id, "target", currentNodes);
-      
+
       return currentNodes; // No modificar aún
     });
-    
+
     // Si no se encontraron los nodos, salir
     if (!foundANode || !foundBNode) return;
-    
+
     // PASO 2: Crear el edge PRIMERO
     setEdges(currentEdges => {
       const alreadyExists = currentEdges.some(e => {
@@ -206,10 +251,10 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
       console.log(`[useIA] ✅ Edge creado:`, newEdge);
       const updatedEdges = currentEdges.concat(newEdge);
       console.log(`[useIA] 📊 Total edges después de agregar:`, updatedEdges.length);
-      
+
       // CRÍTICO: Guardar inmediatamente después de crear el edge
       setTimeout(() => scheduleSnapshot(), 50);
-      
+
       return updatedEdges;
     });
 
@@ -255,52 +300,55 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
     });
   };
 
-  const addRelationNM = (A,B,joinNameOpt) => {
+  const addRelationNM = (A, B, joinNameOpt) => {
     // Usar setNodes para acceder al estado actual
     setNodes(currentNodes => {
       // Buscar las entidades A y B en el estado ACTUAL
       const aNode = currentNodes.find(n => norm(n?.data?.label) === norm(A));
       const bNode = currentNodes.find(n => norm(n?.data?.label) === norm(B));
-      
-      if(!aNode || !bNode) {
+
+      if (!aNode || !bNode) {
         console.warn(`[useIA] No se puede crear relación N-M: entidad no encontrada (${A} ↔ ${B})`);
         console.log(`[useIA] Entidades disponibles:`, currentNodes.map(n => n.data?.label));
         return currentNodes;
       }
-      
+
       const joinName = joinNameOpt?.trim() || joinNameFor(aNode.data?.label, bNode.data?.label);
       const exist = currentNodes.find(n => norm(n?.data?.label) === norm(joinName));
-      const joinId = exist?.id || ("n"+Date.now());
-      
-      if(!exist){
-        const pos = { x: (aNode.position?.x + bNode.position?.x)/2 || 180,
-                      y: (aNode.position?.y + bNode.position?.y)/2 || 180 };
-        
+      const joinId = exist?.id || ("n" + Date.now());
+
+      if (!exist) {
+        const pos = {
+          x: (aNode.position?.x + bNode.position?.x) / 2 || 180,
+          y: (aNode.position?.y + bNode.position?.y) / 2 || 180
+        };
+
         // Inicializar usage para la tabla intermedia
         const initialUsage = {
           target: Object.fromEntries(TARGET_HANDLES.map(h => [h, 0])),
           source: Object.fromEntries(SOURCE_HANDLES.map(h => [h, 0])),
         };
-        
+
         // Crear la tabla intermedia
         const newNode = {
-          id: joinId, type:"classNode", position:pos,
-          data:{ label: normalizeEntityName(joinName),
+          id: joinId, type: "classNode", position: pos,
+          data: {
+            label: normalizeEntityName(joinName),
             attrs: ensureCoherentAttrs([
-              { name:`${normalizeAttrName(aNode.data?.label)}_id`, type:"Integer" },
-              { name:`${normalizeAttrName(bNode.data?.label)}_id`, type:"Integer" },
+              { name: `${normalizeAttrName(aNode.data?.label)}_id`, type: "Integer" },
+              { name: `${normalizeAttrName(bNode.data?.label)}_id`, type: "Integer" },
             ]),
             usage: initialUsage
           }
         };
-        
+
         // Crear las relaciones usando setEdges con estado fresco
         setEdges(currentEdges => {
-          const existsAJ = currentEdges.some(e => 
+          const existsAJ = currentEdges.some(e =>
             (e.source === aNode.id && e.target === joinId) ||
             (e.source === joinId && e.target === aNode.id)
           );
-          
+
           if (existsAJ) {
             console.log('[useIA] Relación N-M duplicada (A→Join):', aNode.data.label, '→', joinName);
             return currentEdges;
@@ -317,7 +365,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
             targetHandle: handleJ1,
             label: '1..*',
             type: 'uml',
-            data: { mA:"1..*", mB:"1", relKind:"ASSOC", relType:"1-N" }
+            data: { mA: "1..*", mB: "1", relKind: "ASSOC", relType: "1-N" }
           };
 
           // Actualizar usage
@@ -363,11 +411,11 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
         });
 
         setEdges(currentEdges => {
-          const existsBJ = currentEdges.some(e => 
+          const existsBJ = currentEdges.some(e =>
             (e.source === bNode.id && e.target === joinId) ||
             (e.source === joinId && e.target === bNode.id)
           );
-          
+
           if (existsBJ) {
             console.log('[useIA] Relación N-M duplicada (B→Join):', bNode.data.label, '→', joinName);
             return currentEdges;
@@ -384,7 +432,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
             targetHandle: handleJ2,
             label: '1..*',
             type: 'uml',
-            data: { mA:"1..*", mB:"1", relKind:"ASSOC", relType:"1-N" }
+            data: { mA: "1..*", mB: "1", relKind: "ASSOC", relType: "1-N" }
           };
 
           // Actualizar usage
@@ -428,17 +476,17 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
 
           return currentEdges.concat(edgeBJ);
         });
-        
+
         return currentNodes.concat(newNode);
       }
-      
+
       // Si ya existe, solo crear las relaciones con detección de duplicados
       setEdges(currentEdges => {
-        const existsAJ = currentEdges.some(e => 
+        const existsAJ = currentEdges.some(e =>
           (e.source === aNode.id && e.target === joinId) ||
           (e.source === joinId && e.target === aNode.id)
         );
-        
+
         if (existsAJ) {
           console.log('[useIA] Relación N-M duplicada (A→Join existente):', aNode.data.label, '→', joinName);
           return currentEdges;
@@ -456,7 +504,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
           targetHandle: handleJ1,
           label: '1..*',
           type: 'uml',
-          data: { mA:"1..*", mB:"1", relKind:"ASSOC", relType:"1-N" }
+          data: { mA: "1..*", mB: "1", relKind: "ASSOC", relType: "1-N" }
         };
 
         setNodes(updatedNodes =>
@@ -501,11 +549,11 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
       });
 
       setEdges(currentEdges => {
-        const existsBJ = currentEdges.some(e => 
+        const existsBJ = currentEdges.some(e =>
           (e.source === bNode.id && e.target === joinId) ||
           (e.source === joinId && e.target === bNode.id)
         );
-        
+
         if (existsBJ) {
           console.log('[useIA] Relación N-M duplicada (B→Join existente):', bNode.data.label, '→', joinName);
           return currentEdges;
@@ -523,7 +571,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
           targetHandle: handleJ2,
           label: '1..*',
           type: 'uml',
-          data: { mA:"1..*", mB:"1", relKind:"ASSOC", relType:"1-N" }
+          data: { mA: "1..*", mB: "1", relKind: "ASSOC", relType: "1-N" }
         };
 
         setNodes(updatedNodes =>
@@ -566,34 +614,34 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
 
         return currentEdges.concat(edgeBJ);
       });
-      
+
       return currentNodes;
     });
   };
 
-  const removeRelationByNames = (A,B) => {
+  const removeRelationByNames = (A, B) => {
     const a = findByName(A), b = findByName(B);
-    if(!a||!b) return;
-    setEdges(es => es.filter(e => !((e.source===a.id && e.target===b.id) || (e.source===b.id && e.target===a.id))));
+    if (!a || !b) return;
+    setEdges(es => es.filter(e => !((e.source === a.id && e.target === b.id) || (e.source === b.id && e.target === a.id))));
   };
 
   /* ---------- Coerción y “smart attrs” ---------- */
   function replaceGenericAttrs(entityName, attrs) {
     const list = Array.isArray(attrs) ? attrs : [];
-    const onlyGeneric = list.filter(a => isGeneric(a?.name||"")).length >= Math.ceil(list.length*0.7);
+    const onlyGeneric = list.filter(a => isGeneric(a?.name || "")).length >= Math.ceil(list.length * 0.7);
     if (!onlyGeneric) return ensureCoherentAttrs(list);
     const wanted = list.length;
     const suggested = smartSuggestAttrs(entityName, wanted);
     return ensureCoherentAttrs(suggested);
   }
 
-  function coerceActions(actions=[]) {
+  function coerceActions(actions = []) {
     return actions.map(act => {
       if (!act || !act.op) return act;
       if (act.name) act.name = normalizeEntityName(act.name);
-      if (act.old)  act.old  = normalizeEntityName(act.old);
-      if (act.a)    act.a    = normalizeEntityName(act.a);
-      if (act.b)    act.b    = normalizeEntityName(act.b);
+      if (act.old) act.old = normalizeEntityName(act.old);
+      if (act.a) act.a = normalizeEntityName(act.a);
+      if (act.b) act.b = normalizeEntityName(act.b);
       if (act.entity) act.entity = normalizeEntityName(act.entity);
 
       switch (act.op) {
@@ -620,8 +668,8 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
           act.relKind = normalizeRelKind(act.relKind);
           act.mA = normalizeMultiplicity(act.mA);
           act.mB = normalizeMultiplicity(act.mB);
-          if (act.owning && !["A","B"].includes(act.owning)) act.owning = "A";
-          if (act.direction && !["A->B","B->A","BIDI"].includes(act.direction)) act.direction = "A->B";
+          if (act.owning && !["A", "B"].includes(act.owning)) act.owning = "A";
+          if (act.direction && !["A->B", "B->A", "BIDI"].includes(act.direction)) act.direction = "A->B";
           break;
         }
         case "add_relation_nm":
@@ -630,7 +678,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
           break;
         }
         case "add_attrs_smart": {
-          act.count = Math.max(1, parseInt(act.count||0, 10) || 1);
+          act.count = Math.max(1, parseInt(act.count || 0, 10) || 1);
           break;
         }
         default: break;
@@ -642,7 +690,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
   function recohereGraph() {
     setNodes(ns => ns.map(n => ({
       ...n,
-      data:{
+      data: {
         ...n.data,
         label: normalizeEntityName(n.data?.label || ""),
         attrs: ensureCoherentAttrs(n.data?.attrs || [])
@@ -652,21 +700,40 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
 
   async function handleIA(userText) {
     const current = {
-      entities: nodes.map(n=>({ id:n.id, name:n.data?.label, attrs:n.data?.attrs||[] })),
-      relations: edges.map(e=>({ aId:e.source, bId:e.target, data:e.data||{} })),
+      entities: nodes.map(n => ({ id: n.id, name: n.data?.label, attrs: n.data?.attrs || [] })),
+      relations: edges.map(e => ({ aId: e.source, bId: e.target, data: e.data || {} })),
       joinTables: []
     };
 
-    const delta = await getDeltaFromUserText({
-      text:userText, promptBuilder: buildPrompt2, currentModel: current
-    });
+    // ══════════════════════════════════════════════════════════════════════════
+    // PRIORIZAR PARSER LOCAL antes de usar Gemini IA
+    // Esto garantiza que comandos simples como "agregacion de X a Y" se
+    // parseen correctamente con el relKind correcto (AGGR, INHERIT, etc.)
+    // ══════════════════════════════════════════════════════════════════════════
+    let delta;
+
+    // Importar parseComando dinámicamente para evitar circular dependencies
+    const { parseComando } = await import("../components/AsistenteIA/ParserComandos");
+    const resultadoLocal = parseComando(userText, current);
+
+    if (!resultadoLocal.needsAI && resultadoLocal.actions.length > 0) {
+      // El parser local pudo manejar el comando
+      console.log(`[handleIA] ✅ Usando parser LOCAL: ${resultadoLocal.actions.length} acciones`, resultadoLocal.actions);
+      delta = { actions: resultadoLocal.actions };
+    } else {
+      // Comando complejo o no reconocido, usar Gemini IA
+      console.log(`[handleIA] 🤖 Usando Gemini IA (needsAI=${resultadoLocal.needsAI})`);
+      delta = await getDeltaFromUserText({
+        text: userText, promptBuilder: buildPrompt2, currentModel: current
+      });
+    }
 
     const acts = coerceActions(Array.isArray(delta?.actions) ? delta.actions : []);
-    
+
     // Contador de entidades nuevas y set para evitar duplicados
     let newEntitiesCount = 0;
     const processedEntities = new Set();
-    
+
     // FASE 1: Procesar todas las acciones de entidades PRIMERO
     // Esto asegura que todas las entidades existan antes de crear relaciones
     for (const act of acts) {
@@ -680,7 +747,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
             break;
           }
           processedEntities.add(normalizedName);
-          
+
           const existed = !!findByName(act.name);
           upsertEntity(act.name, act.attrs || []);
           if (!existed) newEntitiesCount++;
@@ -689,7 +756,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
         case "rename_entity": {
           const ex = findByName(act.old);
           if (ex && act.name) {
-            setNodes(ns => ns.map(n => n.id===ex.id ? { ...n, data:{ ...n.data, label: act.name } } : n));
+            setNodes(ns => ns.map(n => n.id === ex.id ? { ...n, data: { ...n.data, label: act.name } } : n));
           }
           break;
         }
@@ -726,7 +793,7 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
             if (toAdd.length >= act.count) break;
           }
           const final = ensureCoherentAttrs(existing.concat(toAdd));
-          setNodes(ns => ns.map(n => n.id===exId ? { ...n, data:{ ...n.data, attrs: final } } : n));
+          setNodes(ns => ns.map(n => n.id === exId ? { ...n, data: { ...n.data, attrs: final } } : n));
           break;
         }
         case "add_relation_nm":
@@ -738,21 +805,21 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
         default: break;
       }
     }
-    
+
     // FASE 2: Procesar relaciones DESPUÉS de que React actualice el estado
     // Delay necesario para que findByName pueda encontrar las entidades recién creadas
     setTimeout(() => {
       console.log(`[useIA] FASE 2: Procesando relaciones...`);
-      
+
       // Set para rastrear relaciones ya procesadas en este batch
       const processedRelations = new Set();
-      
+
       // Función para crear una clave única de relación (bidireccional)
       const getRelationKey = (a, b) => {
         const sorted = [a, b].sort();
         return `${sorted[0]}|${sorted[1]}`;
       };
-      
+
       // Ahora procesar todas las relaciones
       // En esta fase, todas las entidades ya existen en el estado actualizado
       for (const act of acts) {
@@ -763,10 +830,10 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
             console.warn(`[useIA] Relación duplicada en batch ignorada: ${act.a} ↔ ${act.b}`);
             continue;
           }
-          
+
           console.log(`[useIA] Creando relación: ${act.a} → ${act.b}`);
           processedRelations.add(relKey);
-          
+
           const coh = cohereRelation({
             aName: act.a, bName: act.b, relKind: act.relKind || "ASSOC",
             mA: act.mA, mB: act.mB, verb: act.verb, owning: act.owning, direction: act.direction,
@@ -779,12 +846,12 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
       }
 
       recohereGraph();
-      
+
       // Aplicar auto-layout si se crearon 2 o más entidades nuevas (diagrama completo)
       // Esto organiza automáticamente el diagrama de forma profesional
       if (newEntitiesCount >= 2) {
         console.log(`[useIA] Aplicando auto-layout para ${newEntitiesCount} entidades nuevas`);
-        
+
         // Pequeño delay adicional para que React actualice los edges también
         setTimeout(() => {
           setNodes(currentNodes => {
@@ -800,10 +867,10 @@ export default function useIA({ nodes, edges, setNodes, setEdges, scheduleSnapsh
           });
         }, 150);
       }
-      
+
       scheduleSnapshot();
     }, 100); // Delay de 100ms para permitir que React actualice el estado de nodes
-    
+
     return true;
   }
 

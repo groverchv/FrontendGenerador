@@ -1,7 +1,7 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { SiSpringboot, SiFlutter } from "react-icons/si";
-import { FaFolderOpen, FaUsers, FaFileAlt, FaFileExport, FaFileImport, FaImage, FaCamera, FaQuestionCircle } from "react-icons/fa";
+import { FaFolderOpen, FaUsers, FaFileAlt, FaFileExport, FaFileImport, FaImage, FaCamera, FaQuestionCircle, FaCog } from "react-icons/fa";
 import { createPortal } from "react-dom";
 
 function formatFecha(iso) {
@@ -30,7 +30,7 @@ function ArchivoMenuPortal({ anchorRef, open, onClose, onExport, onImport }) {
   const menuRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
 
-  const place = () => {
+  const place = useCallback(() => {
     const btn = anchorRef.current;
     if (!btn) return;
     const r = btn.getBoundingClientRect();
@@ -40,12 +40,12 @@ function ArchivoMenuPortal({ anchorRef, open, onClose, onExport, onImport }) {
       left: r.left + window.scrollX,
       width: Math.max(176, r.width), // ancho mínimo agradable
     });
-  };
+  }, [anchorRef]);
 
   useLayoutEffect(() => {
     if (!open) return;
     place();
-  }, [open]);
+  }, [open, place]);
 
   useEffect(() => {
     if (!open) return;
@@ -59,7 +59,7 @@ function ArchivoMenuPortal({ anchorRef, open, onClose, onExport, onImport }) {
       window.removeEventListener("resize", onScrollOrResize);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, place, onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -74,7 +74,7 @@ function ArchivoMenuPortal({ anchorRef, open, onClose, onExport, onImport }) {
     };
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open, onClose]);
+  }, [open, onClose, anchorRef]);
 
   if (!open) return null;
 
@@ -119,7 +119,7 @@ function ImportImageMenuPortal({ anchorRef, open, onClose, onCamera, onFile }) {
   const menuRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
 
-  const place = () => {
+  const place = useCallback(() => {
     const btn = anchorRef.current;
     if (!btn) return;
     const r = btn.getBoundingClientRect();
@@ -128,12 +128,12 @@ function ImportImageMenuPortal({ anchorRef, open, onClose, onCamera, onFile }) {
       left: r.left + window.scrollX,
       width: Math.max(176, r.width),
     });
-  };
+  }, [anchorRef]);
 
   useLayoutEffect(() => {
     if (!open) return;
     place();
-  }, [open]);
+  }, [open, place]);
 
   useEffect(() => {
     if (!open) return;
@@ -147,7 +147,7 @@ function ImportImageMenuPortal({ anchorRef, open, onClose, onCamera, onFile }) {
       window.removeEventListener("resize", onScrollOrResize);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, place, onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -162,7 +162,7 @@ function ImportImageMenuPortal({ anchorRef, open, onClose, onCamera, onFile }) {
     };
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open, onClose]);
+  }, [open, onClose, anchorRef]);
 
   if (!open) return null;
 
@@ -205,13 +205,12 @@ function ImportImageMenuPortal({ anchorRef, open, onClose, onCamera, onFile }) {
 export default function ProjectNavbar({
   project,
   onGenerate,
-  onSave,
   onExport,   // opcional
   onImport,   // opcional
   onGenerateFlutter, // nuevo
   onImportImageFromCamera, // nuevo
   onImportImageFromFile, // nuevo
-  onShowExamples, // nuevo
+  onConfigureApiKey, // nuevo - para configurar API key
   onlineCount,
   isGenerating: isGeneratingProp,
   isGeneratingFlutter: isGeneratingFlutterProp,
@@ -261,21 +260,22 @@ export default function ProjectNavbar({
   };
 
   return (
-    <div className="flex items-center justify-between px-3 sm:px-4 py-2 border-b bg-white">
-      <div>
-        <div className="text-sm sm:text-lg font-semibold flex items-center gap-3">
-          {project?.name || "Proyecto"}
+    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between px-3 sm:px-4 py-2 border-b bg-white gap-2 sm:gap-0">
+      <div className="w-full sm:w-auto">
+        <div className="text-sm sm:text-lg font-semibold flex items-center gap-2 sm:gap-3 flex-wrap">
+          <span className="truncate max-w-[150px] sm:max-w-none">{project?.name || "Proyecto"}</span>
           {typeof onlineCount === "number" && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] sm:text-xs border bg-emerald-50 text-emerald-700">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-xs border bg-emerald-50 text-emerald-700 whitespace-nowrap">
               <FaUsers className="w-3 h-3" />
-              En línea: {onlineCount}
+              <span className="hidden xs:inline">En línea:</span> {onlineCount}
             </span>
           )}
         </div>
-        <div className="text-[11px] sm:text-xs text-gray-500">Creado: {formatFecha(project?.createdAt)}</div>
+        <div className="text-[10px] sm:text-xs text-gray-500">Creado: {formatFecha(project?.createdAt)}</div>
       </div>
 
-      <div className="flex items-center gap-2">
+      {/* Contenedor de botones - responsive con scroll horizontal en móvil */}
+      <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scrollbar-thin scrollbar-thumb-gray-300">
         {/* Importar imagen (anchor) */}
         <button
           ref={importImageBtnRef}
@@ -283,10 +283,12 @@ export default function ProjectNavbar({
           onClick={() => setOpenImportImage((v) => !v)}
           aria-haspopup="menu"
           aria-expanded={openImportImage}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-700 text-sm font-medium transition-colors"
+          title="Importar imagen UML"
+          className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg border-2 border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0"
         >
-          <FaImage className="w-5 h-5" />
-          Importar imagen
+          <FaImage className="w-4 h-4 sm:w-5 sm:h-5" />
+          <span className="hidden sm:inline">Importar imagen</span>
+          <span className="sm:hidden">Imagen</span>
         </button>
 
         {/* Portal con menú de importar imagen */}
@@ -304,19 +306,21 @@ export default function ProjectNavbar({
           disabled={isGeneratingFlutter}
           aria-busy={isGeneratingFlutter}
           aria-live="polite"
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-blue-300 bg-blue-50 text-blue-700 text-sm font-medium transition-colors ${
+          title="Generar código Flutter"
+          className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg border-2 border-blue-300 bg-blue-50 text-blue-700 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
             isGeneratingFlutter ? "opacity-60 cursor-not-allowed" : "hover:bg-blue-100"
           }`}
         >
           {isGeneratingFlutter ? (
             <>
               <Spinner className="w-4 h-4" />
-              <span>Generando Flutter…</span>
+              <span className="hidden sm:inline">Generando…</span>
             </>
           ) : (
             <>
-              <SiFlutter className="w-5 h-5" />
-              <span>Generar Flutter</span>
+              <SiFlutter className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="hidden sm:inline">Generar Flutter</span>
+              <span className="sm:hidden">Flutter</span>
             </>
           )}
         </button>
@@ -327,19 +331,21 @@ export default function ProjectNavbar({
           disabled={isGenerating}
           aria-busy={isGenerating}
           aria-live="polite"
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-green-300 bg-green-50 text-green-700 text-sm font-medium transition-colors ${
+          title="Generar código Spring Boot"
+          className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 sm:py-2.5 rounded-lg border-2 border-green-300 bg-green-50 text-green-700 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
             isGenerating ? "opacity-60 cursor-not-allowed" : "hover:bg-green-100"
           }`}
         >
           {isGenerating ? (
             <>
               <Spinner className="w-4 h-4" />
-              <span>Generando…</span>
+              <span className="hidden sm:inline">Generando…</span>
             </>
           ) : (
             <>
-              <SiSpringboot className="w-5 h-5 text-green-700" />
-              <span>Generar Spring Boot</span>
+              <SiSpringboot className="w-4 h-4 sm:w-5 sm:h-5 text-green-700" />
+              <span className="hidden sm:inline">Generar Spring Boot</span>
+              <span className="sm:hidden">Spring</span>
             </>
           )}
         </button>
@@ -351,10 +357,11 @@ export default function ProjectNavbar({
           onClick={() => setOpenArchivo((v) => !v)}
           aria-haspopup="menu"
           aria-expanded={openArchivo}
-          className="flex items-center gap-2 px-3 py-2 rounded-md border hover:bg-gray-50 text-sm"
+          title="Opciones de archivo"
+          className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-2 rounded-md border hover:bg-gray-50 text-xs sm:text-sm whitespace-nowrap flex-shrink-0"
         >
           <FaFileAlt className="w-4 h-4" />
-          Archivo
+          <span className="hidden sm:inline">Archivo</span>
           <svg
             className={`w-3 h-3 transition-transform ${openArchivo ? "rotate-180" : ""}`}
             viewBox="0 0 20 20"
@@ -379,9 +386,26 @@ export default function ProjectNavbar({
         />
 
         {/* Ver proyectos */}
-        <Link to="/proyectos" className="flex items-center gap-2 px-3 py-2 rounded-md border hover:bg-gray-50 text-sm">
-          <FaFolderOpen className="w-4 h-4" /> Ver proyectos
+        <Link 
+          to="/proyectos" 
+          title="Ver todos los proyectos"
+          className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-2 rounded-md border hover:bg-gray-50 text-xs sm:text-sm whitespace-nowrap flex-shrink-0"
+        >
+          <FaFolderOpen className="w-4 h-4" />
+          <span className="hidden sm:inline">Ver proyectos</span>
         </Link>
+
+        {/* Configuración de API */}
+        {onConfigureApiKey && (
+          <button
+            onClick={onConfigureApiKey}
+            title="Configurar API key de IA"
+            className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-2 rounded-md border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs sm:text-sm whitespace-nowrap flex-shrink-0"
+          >
+            <FaCog className="w-4 h-4" />
+            <span className="hidden sm:inline">Config IA</span>
+          </button>
+        )}
       </div>
     </div>
   );

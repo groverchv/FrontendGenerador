@@ -6,7 +6,9 @@ import { Sockend } from "../../../api/socket"; // SockJS + STOMP
 import Diagramador from "../Diagramador/Diagramador";
 import ProjectNavbar from "./ProjectNavbar";
 import { useToast } from "../../../hooks/useToast";
-import ImageProcessingModal from "../Diagramador/components/ImageProcessingModal";
+import ImageProcessingModal from "../Diagramador/components/Image/ImageProcessingModal";
+import ApiKeyConfig from "../Diagramador/components/Image/ApiKeyConfig";
+import { setGeminiApiKey, resetApiKeySystem } from "../Diagramador/services/apiGemine";
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -39,8 +41,21 @@ export default function ProjectDetail() {
     stage: 'uploading', // uploading, processing, creating, completed, error
     className: null,
     attributes: null,
-    methods: null
+    methods: null,
+    errorMessage: null,
+    lastFile: null // Guardar último archivo para reintentar
   });
+
+  // Estado para modal de configuración de API key
+  const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
+
+  // Cargar API key guardada en localStorage al iniciar
+  useEffect(() => {
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+      setGeminiApiKey(savedKey);
+    }
+  }, []);
 
   // ---- Exportar (PUML por defecto)
   const handleExport = () => {
@@ -95,7 +110,9 @@ export default function ProjectDetail() {
       stage: 'uploading',
       className: null,
       attributes: null,
-      methods: null
+      methods: null,
+      errorMessage: null,
+      lastFile: file // Guardar para posible reintento
     });
 
     try {
@@ -137,15 +154,53 @@ export default function ProjectDetail() {
         stage: 'completed',
         className: message,
         attributes: result?.originalDiagramInfo?.classes || [],
-        methods: result?.originalDiagramInfo?.relations || []
+        methods: result?.originalDiagramInfo?.relations || [],
+        errorMessage: null
       }));
 
     } catch (error) {
       console.error("Error procesando imagen:", error);
-      setImageProcessing(prev => ({
-        ...prev,
-        stage: 'error'
-      }));
+      const errorMsg = error?.message || String(error) || 'Error desconocido al procesar la imagen';
+      
+      // Si es error de API key, mostrar modal de configuración
+      if (/api.?key|expired|invalid/i.test(errorMsg)) {
+        setImageProcessing(prev => ({
+          ...prev,
+          stage: 'error',
+          errorMessage: errorMsg
+        }));
+        // Mostrar modal de configuración de API key después de un momento
+        setTimeout(() => {
+          setShowApiKeyConfig(true);
+        }, 500);
+      } else {
+        setImageProcessing(prev => ({
+          ...prev,
+          stage: 'error',
+          errorMessage: errorMsg
+        }));
+      }
+    }
+  };
+
+  // ---- Función para reintentar procesamiento de imagen
+  const handleRetryImageProcessing = () => {
+    // Reiniciar el sistema de keys antes de reintentar
+    resetApiKeySystem();
+    const lastFile = imageProcessing.lastFile;
+    if (lastFile) {
+      processImageWithModal(lastFile);
+    }
+  };
+
+  // ---- Callback cuando se configura una nueva API key
+  const handleApiKeyConfigured = () => {
+    // Si hay un archivo pendiente, reintentar automáticamente
+    const lastFile = imageProcessing.lastFile;
+    if (lastFile && imageProcessing.stage === 'error') {
+      setTimeout(() => {
+        handleRetryImageProcessing();
+      }, 500);
     }
   };
 
@@ -307,6 +362,7 @@ export default function ProjectDetail() {
         onGenerateFlutter={handleGenerateFlutter}  // Generar Flutter
         onImportImageFromCamera={handleImportImageFromCamera}  // Cámara
         onImportImageFromFile={handleImportImageFromFile}      // Archivo imagen
+        onConfigureApiKey={() => setShowApiKeyConfig(true)}    // Configurar API key
       />
 
       {/* input oculto para importar (PUML/JSON) */}
@@ -373,7 +429,16 @@ export default function ProjectDetail() {
         className={imageProcessing.className}
         attributes={imageProcessing.attributes}
         methods={imageProcessing.methods}
+        errorMessage={imageProcessing.errorMessage}
         onClose={() => setImageProcessing(prev => ({ ...prev, isOpen: false }))}
+        onRetry={handleRetryImageProcessing}
+      />
+
+      {/* Modal de configuración de API key */}
+      <ApiKeyConfig
+        isOpen={showApiKeyConfig}
+        onClose={() => setShowApiKeyConfig(false)}
+        onConfigured={handleApiKeyConfigured}
       />
 
       <div className="flex-1 min-h-0">

@@ -34,7 +34,7 @@ export function makeSkeleton(projectName, packageBase) {
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>4.0.0-SNAPSHOT</version>
+    <version>3.3.5</version>
     <relativePath/>
   </parent>
 
@@ -211,11 +211,14 @@ public class CorsConfig implements WebMvcConfigurer {
 }
 `;
 
+  const readme = "# " + projectName + "\n\nBackend Spring Boot generado desde diagrama UML.\n\n## Requisitos\n- Java 21+\n- Maven 3.8+\n- PostgreSQL\n\n## Inicio\n1. Crea la base de datos: CREATE DATABASE " + artifactId + ";\n2. Edita application.properties con tu password\n3. Ejecuta: mvn spring-boot:run\n4. API en: http://localhost:8080/api/{entidad}\n";
+
   return {
     "pom.xml": pom,
     [`src/main/java/${pkgPath}/${appClass}.java`]: application,
     "src/main/resources/application.properties": props,
     [`src/main/java/${pkgPath}/Config/CorsConfig.java`]: corsConfig,
+    "README.md": readme,
   };
 }
 

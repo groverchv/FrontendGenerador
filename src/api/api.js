@@ -1,8 +1,9 @@
 import axios from "axios";
-// https://backend-generador-full-stack.up.railway.app/
-// Permite VITE_API_BASE (existente) y VITE_API_BASE_URL (alias) con fallback a http://localhost:8080 funciona
+// Backend producción: https://backendgenerador-production.up.railway.app
+// Backend desarrollo: http://localhost:8080
+// Usa VITE_API_BASE o VITE_API_BASE_URL desde archivos .env
 export const API_BASE_URL =
-  (import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE_URL || "https://backend-generador-full-stack.up.railway.app");
+  (import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_BASE_URL || "https://backendgenerador-production.up.railway.app");
 
 const api = axios.create({
   baseURL: API_BASE_URL.replace(/\/+$/, ""),
@@ -37,7 +38,7 @@ api.interceptors.response.use(
     const status = error.response?.status;
     const message = error.response?.data?.message || error.message;
     const config = error.config || {};
-    
+
     // Manejo específico por código de error
     switch (status) {
       case 400:
@@ -63,7 +64,7 @@ api.interceptors.response.use(
       default:
         console.error("[API] Error:", status, message);
     }
-    
+
     // Agregar información útil al error
     error.userMessage = message || "Error de conexión con el servidor";
     error.isNetworkError = !error.response;

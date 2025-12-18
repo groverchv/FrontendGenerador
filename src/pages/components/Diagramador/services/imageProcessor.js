@@ -1,11 +1,25 @@
 // src/pages/components/Diagramador/services/imageProcessor.js
 // Servicio para procesar imágenes de clases UML usando Gemini Vision API
+// ⭐ Sistema robusto con reintentos automáticos y múltiples API keys
 
 // Importar funciones de la API centralizada
-import { callGeminiVision, setGeminiApiKey, setGeminiModel } from "./apiGemine";
+import {
+  callGeminiVision,
+  setGeminiApiKey,
+  setGeminiModel,
+  addApiKeyToPool,
+  resetApiKeySystem,
+  getApiStatus
+} from "./apiGemine";
 
 // Re-exportar para compatibilidad con código existente
-export { setGeminiApiKey, setGeminiModel };
+export {
+  setGeminiApiKey,
+  setGeminiModel,
+  addApiKeyToPool,
+  resetApiKeySystem,
+  getApiStatus
+};
 
 /**
  * Convierte un archivo de imagen a base64
@@ -33,7 +47,7 @@ function getImageMimeType(file) {
   if (file.type) {
     return file.type;
   }
-  
+
   // Fallback si no hay tipo definido
   if (file.name && file.name.toLowerCase().endsWith('.png')) {
     return 'image/png';
@@ -44,7 +58,7 @@ function getImageMimeType(file) {
   } else if (file.name && file.name.toLowerCase().endsWith('.webp')) {
     return 'image/webp';
   }
-  
+
   return 'image/jpeg'; // Default fallback
 }
 
@@ -59,35 +73,33 @@ export async function processMultipleUMLClassesImage(imageFile) {
     const base64Image = await fileToBase64(imageFile);
     const mimeType = getImageMimeType(imageFile);
 
-    // Prompt específico para extraer múltiples clases y relaciones
+    // Prompt OPTIMIZADO para escaneo 100% preciso del diagrama
     const prompt = `
-Analiza esta imagen que contiene un diagrama UML con múltiples clases y sus relaciones.
+INSTRUCCIÓN CRÍTICA: Debes extraer EXACTAMENTE lo que ves en el diagrama UML de esta imagen.
+NO modifiques, NO interpretes, NO inventes nada. Tu trabajo es COPIAR con precisión lo que ves.
 
-Por favor, devuelve un JSON con la siguiente estructura exacta:
+RESPUESTA REQUERIDA - JSON con esta estructura EXACTA:
 {
   "classes": [
     {
-      "className": "NombreDeLaClase",
+      "className": "NOMBRE_EXACTO_COMO_APARECE_EN_LA_IMAGEN",
       "position": {
-        "x": "posición horizontal relativa (0-100, donde 0 es izquierda y 100 es derecha)",
-        "y": "posición vertical relativa (0-100, donde 0 es arriba y 100 es abajo)"
+        "x": número_0_a_100_posición_horizontal,
+        "y": número_0_a_100_posición_vertical
       },
       "attributes": [
         {
-          "name": "nombreAtributo",
-          "type": "TipoDelAtributo",
+          "name": "NOMBRE_EXACTO_DEL_ATRIBUTO",
+          "type": "TIPO_EXACTO_COMO_APARECE",
           "visibility": "public|private|protected|package"
         }
       ],
       "methods": [
         {
-          "name": "nombreMetodo",
-          "returnType": "TipoDeRetorno",
+          "name": "NOMBRE_EXACTO_DEL_METODO",
+          "returnType": "TIPO_RETORNO_EXACTO",
           "parameters": [
-            {
-              "name": "nombreParametro",
-              "type": "TipoParametro"
-            }
+            {"name": "NOMBRE_PARAM", "type": "TIPO_PARAM"}
           ],
           "visibility": "public|private|protected|package"
         }
@@ -96,70 +108,83 @@ Por favor, devuelve un JSON con la siguiente estructura exacta:
   ],
   "relations": [
     {
-      "from": "ClaseOrigen",
-      "to": "ClaseDestino",
+      "from": "CLASE_ORIGEN_EXACTA",
+      "to": "CLASE_DESTINO_EXACTA",
       "type": "association|aggregation|composition|inheritance|dependency",
-      "multiplicityFrom": "1|*|0..1|1..*|0..*",
-      "multiplicityTo": "1|*|0..1|1..*|0..*",
-      "label": "nombre de la relación (opcional)",
-      "requiresJoinTable": false,
-      "suggestedJoinTableName": "NombreTablaIntermedia (solo si requiresJoinTable=true)"
+      "multiplicityFrom": "MULTIPLICIDAD_EXACTA_ORIGEN",
+      "multiplicityTo": "MULTIPLICIDAD_EXACTA_DESTINO",
+      "label": "TEXTO_DE_LA_LINEA_SI_EXISTE",
+      "sourcePosition": "left|right|top|bottom",
+      "targetPosition": "left|right|top|bottom",
+      "requiresJoinTable": boolean
     }
   ]
 }
 
-Instrucciones específicas:
-1. Identifica TODAS las clases en el diagrama
-2. Para cada clase, DETERMINA SU POSICIÓN RELATIVA en la imagen:
-   - Si la clase está en la parte izquierda de la imagen, x debe ser cercano a 0-30
-   - Si está en el centro, x debe ser cercano a 40-60
-   - Si está en la derecha, x debe ser cercano a 70-100
-   - Si está arriba, y debe ser cercano a 0-30
-   - Si está en el medio verticalmente, y debe ser 40-60
-   - Si está abajo, y debe ser 70-100
-3. Para cada clase, extrae el nombre, atributos y métodos
-4. Si no puedes determinar la visibilidad, usa "public" por defecto
-5. Para los tipos de datos, mapea a tipos de Java estándar (String, Integer, Boolean, Double, Date, BigDecimal, etc.)
-6. Símbolos UML de visibilidad: + = public, - = private, # = protected, ~ = package
-7. Si hay métodos getters/setters, inclúyelos también
-8. Si no hay métodos visibles, deja el array "methods" vacío
-9. Si no hay atributos visibles, deja el array "attributes" vacío
-10. Los nombres deben estar en formato apropiado (PascalCase para clases, camelCase para atributos/métodos)
+═══════════════════════════════════════════════════════════════════════
+REGLAS DE EXTRACCIÓN - COPIA EXACTA
+═══════════════════════════════════════════════════════════════════════
 
-Para las relaciones:
-1. BUSCA TODAS LAS LÍNEAS que conectan las clases - incluso si son líneas simples sin símbolos
-2. Para CADA línea que veas, crea una relación en el array "relations"
-3. Tipos de relación (IMPORTANTE - identifica correctamente):
-   - "association": línea simple (puede tener flecha simple en un extremo o ninguna)
-   - "aggregation": línea con rombo VACÍO/BLANCO en un extremo (representa "tiene un")
-   - "composition": línea con rombo LLENO/NEGRO en un extremo (representa "es parte de")
-   - "inheritance": línea con triángulo VACÍO/flecha grande en un extremo (representa "es un" / herencia)
-   - "dependency": línea PUNTEADA/DISCONTINUA con flecha (representa dependencia débil)
-4. Detecta las multiplicidades en AMBOS extremos de CADA línea:
-   - Busca números o texto cerca de los extremos de cada línea
-   - "1": uno exactamente
-   - "*": muchos (cero o más)
-   - "0..1": opcional (cero o uno)
-   - "1..*": uno o más
-   - "0..*": cero o más (equivalente a *)
-   - Si no hay multiplicidad visible en un extremo, usa "1" por defecto
-5. Para relaciones N-M (muchos a muchos):
-   - Si AMBOS extremos tienen "*" o "0..*" o "1..*", es una relación N-M
-   - Marca estas relaciones especialmente para crear tabla intermedia
-6. Captura el texto de la etiqueta de la relación si existe (busca texto cerca de la línea)
-7. Identifica la dirección:
-   - Si la flecha apunta de A hacia B: from=A, to=B
-   - Si es un rombo en A conectado a B: from=A, to=B (el rombo está en el lado "contenedor")
-   - Si es herencia, el triángulo apunta a la clase padre: from=ClaseHija, to=ClasePadre
-   - Si solo es una línea simple sin flecha: identifica de izquierda a derecha o de arriba a abajo
+📋 CLASES - EXTRACCIÓN LITERAL:
+1. NOMBRE: Copia el texto EXACTO del título de cada caja/rectángulo
+2. POSICIÓN: Mide la posición relativa en la imagen:
+   - x=0 significa pegado al borde izquierdo
+   - x=50 significa en el centro horizontal
+   - x=100 significa pegado al borde derecho
+   - y=0 significa pegado al borde superior
+   - y=50 significa en el centro vertical
+   - y=100 significa pegado al borde inferior
+3. ATRIBUTOS: Copia CADA línea que veas en la sección de atributos
+   - Copia el nombre EXACTO como aparece (no cambies mayúsculas/minúsculas)
+   - Copia el tipo EXACTO como aparece (String, int, Integer, Long, etc.)
+   - Si ves "+" es public, "-" es private, "#" es protected, "~" es package
+   - Si no hay símbolo, asume "private"
+4. MÉTODOS: Copia CADA método que veas en la sección de métodos
+   - Incluye paréntesis y parámetros EXACTAMENTE como aparecen
 
-CRÍTICO: 
-- DEBES detectar TODAS las líneas entre clases
-- Si ves una tabla intermedia (ej: "Catalogo_Producto"), detecta sus relaciones también
-- Para relaciones N-M: agrega "requiresJoinTable": true
-- Sugiere un nombre para la tabla intermedia en "suggestedJoinTableName"
+🔗 RELACIONES - IDENTIFICACIÓN PRECISA:
+1. MIRA CADA LÍNEA que conecta dos clases
+2. IDENTIFICA EL TIPO por el símbolo en los extremos:
+   - Línea simple → "association"
+   - Rombo VACÍO (◇) → "aggregation"
+   - Rombo LLENO (◆) → "composition"
+   - Triángulo vacío (△) / flecha grande → "inheritance"
+   - Línea PUNTEADA (- - -) → "dependency"
+3. DETECTA MULTIPLICIDADES - busca números/texto cerca de CADA extremo:
+   - "1" = exactamente uno
+   - "*" = muchos
+   - "0..1" = cero o uno
+   - "1..*" = uno o más
+   - "0..*" = cero o más
+   - "n" = muchos (trátalo como "*")
+   - Si NO ves multiplicidad, usa "1"
+4. POSICIÓN DE CONEXIÓN - indica DÓNDE la línea toca cada clase:
+   - "left" = la línea entra por el lado izquierdo de la clase
+   - "right" = la línea entra por el lado derecho
+   - "top" = la línea entra por arriba
+   - "bottom" = la línea entra por abajo
+5. DIRECCIÓN:
+   - Si hay flecha (→): from=origen, to=destino (donde apunta la flecha)
+   - Si hay rombo (◇ o ◆): el rombo está en el lado "contenedor" (from)
+   - Si hay triángulo: from=clase hija, to=clase padre
+   - Si no hay símbolos: from=la clase de la izquierda/arriba
 
-IMPORTANTE: Devuelve SOLO el JSON válido, sin texto adicional ni formato markdown.
+⚠️ ERRORES A EVITAR:
+- NO cambies los nombres (si dice "Usuario" no lo cambies a "User")
+- NO cambies los tipos (si dice "int" no lo cambies a "Integer")
+- NO omitas atributos o métodos
+- NO inventes relaciones que no existen
+- NO asumas multiplicidades que no ves
+- CUENTA todas las clases y verifica que las incluiste todas
+- CUENTA todas las líneas y verifica que las incluiste todas
+
+📊 VERIFICACIÓN FINAL:
+- ¿Incluiste TODAS las cajas/rectángulos como clases?
+- ¿Copiaste TODOS los atributos de CADA clase?
+- ¿Identificaste TODAS las líneas entre clases?
+- ¿Las posiciones x,y reflejan dónde está cada clase en la imagen?
+
+IMPORTANTE: Devuelve SOLO el JSON válido, sin texto adicional ni markdown.
 `;
 
     // Llamar a la API centralizada de Gemini Vision
@@ -323,19 +348,19 @@ IMPORTANTE: Devuelve SOLO el JSON válido, sin texto adicional ni formato markdo
 export function convertTodiagramFormat(classInfo) {
   // Combinar atributos y métodos en un solo array de "attrs" como usa el diagramador
   const attrs = [];
-  
+
   // Agregar ID por defecto si no existe
-  const hasId = classInfo.attributes.some(attr => 
+  const hasId = classInfo.attributes.some(attr =>
     attr.name.toLowerCase() === 'id'
   );
-  
+
   if (!hasId) {
     attrs.push({
       name: "id",
       type: "Integer"
     });
   }
-  
+
   // Convertir atributos
   classInfo.attributes.forEach(attr => {
     attrs.push({
@@ -343,13 +368,13 @@ export function convertTodiagramFormat(classInfo) {
       type: attr.type || "String"
     });
   });
-  
+
   // Convertir métodos (opcional, algunos diagramadores solo muestran atributos)
   classInfo.methods.forEach(method => {
-    const paramStr = method.parameters 
+    const paramStr = method.parameters
       ? method.parameters.map(p => `${p.name}: ${p.type}`).join(", ")
       : "";
-    
+
     attrs.push({
       name: `${method.name}(${paramStr})`,
       type: method.returnType || "void",
@@ -365,6 +390,7 @@ export function convertTodiagramFormat(classInfo) {
 
 /**
  * Determina el mejor handle para conectar dos nodos basándose en sus posiciones
+ * MEJORADO: Evita usar el mismo handle para múltiples relaciones excepto cuando todos están ocupados
  * @param {Object} sourcePos - Posición del nodo origen {x, y}
  * @param {Object} targetPos - Posición del nodo destino {x, y}
  * @param {boolean} isSource - true si es el handle de origen, false si es de destino
@@ -374,14 +400,15 @@ export function convertTodiagramFormat(classInfo) {
 function getBestHandleForConnection(sourcePos, targetPos, isSource, usedHandles = new Set()) {
   const dx = targetPos.x - sourcePos.x;
   const dy = targetPos.y - sourcePos.y;
-  
+
   // Calcular ángulo de la conexión
   const angle = Math.atan2(dy, dx) * 180 / Math.PI; // -180 a 180
-  
+
   // Normalizar ángulo a 0-360
   const normalizedAngle = angle < 0 ? angle + 360 : angle;
-  
+
   // Handles disponibles según la dirección (ordenados por prioridad de uso)
+  // Se distribuyen los handles para evitar cruces
   // Handles fuente (sin sufijo -t)
   const sourceHandles = {
     right: ['r1', 'r2', 'tr', 'br'],     // 0° ± 45° (derecha)
@@ -389,7 +416,7 @@ function getBestHandleForConnection(sourcePos, targetPos, isSource, usedHandles 
     left: ['l1', 'l2', 'tl', 'bl'],      // 180° ± 45° (izquierda)
     top: ['t1', 't2', 't3', 't4', 'tl', 'tr'],       // 270° ± 45° (arriba)
   };
-  
+
   // Handles destino (con sufijo -t)
   const targetHandles = {
     right: ['r1-t', 'r2-t', 'tr-t', 'br-t'],
@@ -397,30 +424,102 @@ function getBestHandleForConnection(sourcePos, targetPos, isSource, usedHandles 
     left: ['l1-t', 'l2-t', 'tl-t', 'bl-t'],
     top: ['t1-t', 't2-t', 't3-t', 't4-t', 'tl-t', 'tr-t'],
   };
-  
+
   const handles = isSource ? sourceHandles : targetHandles;
-  
-  // Seleccionar handle basado en el ángulo
-  let selectedHandles;
+
+  // Seleccionar handles primarios y secundarios basados en el ángulo
+  let primaryHandles, secondaryHandles;
+
+  // Determinar dirección principal basándose en el ángulo
+  // Usamos márgenes más amplios para mejor distribución
   if (normalizedAngle >= 315 || normalizedAngle < 45) {
-    selectedHandles = handles.right;
+    // Hacia la derecha (0°)
+    primaryHandles = handles.right;
+    secondaryHandles = normalizedAngle >= 315 ? handles.top : handles.bottom;
   } else if (normalizedAngle >= 45 && normalizedAngle < 135) {
-    selectedHandles = handles.bottom;
+    // Hacia abajo (90°)
+    primaryHandles = handles.bottom;
+    secondaryHandles = normalizedAngle < 90 ? handles.right : handles.left;
   } else if (normalizedAngle >= 135 && normalizedAngle < 225) {
-    selectedHandles = handles.left;
+    // Hacia la izquierda (180°)
+    primaryHandles = handles.left;
+    secondaryHandles = normalizedAngle < 180 ? handles.bottom : handles.top;
   } else {
-    selectedHandles = handles.top;
+    // Hacia arriba (270°)
+    primaryHandles = handles.top;
+    secondaryHandles = normalizedAngle < 270 ? handles.left : handles.right;
   }
-  
-  // Buscar el primer handle libre en la dirección óptima
-  for (const handle of selectedHandles) {
+
+  // PASO 1: Buscar handle libre en la dirección primaria
+  for (const handle of primaryHandles) {
     if (!usedHandles.has(handle)) {
       return handle;
     }
   }
-  
-  // Si todos están ocupados, retornar el primero (permitir reutilización)
-  return selectedHandles[0];
+
+  // PASO 2: Si todos los primarios están ocupados, buscar en secundarios
+  for (const handle of secondaryHandles) {
+    if (!usedHandles.has(handle)) {
+      return handle;
+    }
+  }
+
+  // PASO 3: Buscar en cualquier dirección que tenga un handle libre
+  const allDirections = ['right', 'bottom', 'left', 'top'];
+  for (const direction of allDirections) {
+    for (const handle of handles[direction]) {
+      if (!usedHandles.has(handle)) {
+        return handle;
+      }
+    }
+  }
+
+  // PASO 4: Si todos están ocupados, permitir reutilización del primario (múltiples relaciones)
+  // pero intentar distribuir entre los disponibles
+  const allPrimaryHandles = primaryHandles.length;
+  const usedPrimaryCount = primaryHandles.filter(h => usedHandles.has(h)).length;
+
+  // Elegir el handle con menos usos (circular entre los disponibles)
+  return primaryHandles[usedPrimaryCount % allPrimaryHandles];
+}
+
+/**
+ * Convierte una posición de conexión (left, right, top, bottom) a un handle del diagramador
+ * @param {string} position - Posición: "left", "right", "top", "bottom"
+ * @param {boolean} isSource - true si es handle de origen, false si es destino
+ * @param {Set} usedHandles - Set de handles ya ocupados para este nodo
+ * @returns {string} - ID del handle correspondiente
+ */
+function getHandleFromPosition(position, isSource, usedHandles = new Set()) {
+  // Mapeo de posiciones a handles disponibles
+  const handleMap = {
+    source: {
+      left: ['l1', 'l2', 'tl', 'bl'],
+      right: ['r1', 'r2', 'tr', 'br'],
+      top: ['t1', 't2', 't3', 't4', 'tl', 'tr'],
+      bottom: ['b1', 'b2', 'b3', 'b4', 'bl', 'br']
+    },
+    target: {
+      left: ['l1-t', 'l2-t', 'tl-t', 'bl-t'],
+      right: ['r1-t', 'r2-t', 'tr-t', 'br-t'],
+      top: ['t1-t', 't2-t', 't3-t', 't4-t', 'tl-t', 'tr-t'],
+      bottom: ['b1-t', 'b2-t', 'b3-t', 'b4-t', 'bl-t', 'br-t']
+    }
+  };
+
+  const handles = isSource ? handleMap.source : handleMap.target;
+  const pos = position?.toLowerCase() || 'right';
+  const positionHandles = handles[pos] || handles.right;
+
+  // Buscar el primer handle libre
+  for (const handle of positionHandles) {
+    if (!usedHandles.has(handle)) {
+      return handle;
+    }
+  }
+
+  // Si todos están ocupados, usar el primero
+  return positionHandles[0];
 }
 
 /**
@@ -433,7 +532,7 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
   const nodes = [];
   const edges = [];
   const classNameToId = {};
-  
+
   // Registro de handles ocupados por nodo: { nodeId: { source: Set, target: Set } }
   const handleUsage = {};
 
@@ -441,7 +540,7 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
   diagramInfo.classes.forEach((classInfo, index) => {
     const nodeId = `node-${Date.now()}-${index}`;
     classNameToId[classInfo.className] = nodeId;
-    
+
     // Inicializar registro de handles para este nodo
     handleUsage[nodeId] = {
       source: new Set(),
@@ -450,18 +549,18 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
 
     // Calcular posición real basada en la posición relativa detectada
     let position = { x: 100, y: 100 };
-    
+
     if (classInfo.position) {
       // Convertir posición relativa (0-100) a coordenadas absolutas
       const relX = parseFloat(classInfo.position.x) || 50;
       const relY = parseFloat(classInfo.position.y) || 50;
-      
+
       // Mapear a coordenadas del canvas con márgenes
       const marginX = 100;
       const marginY = 100;
       const usableWidth = canvasSize.width - (marginX * 2);
       const usableHeight = canvasSize.height - (marginY * 2);
-      
+
       position = {
         x: marginX + (relX / 100) * usableWidth,
         y: marginY + (relY / 100) * usableHeight
@@ -479,19 +578,19 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
 
     // Combinar atributos y métodos
     const attrs = [];
-    
+
     // Agregar ID por defecto si no existe
-    const hasId = classInfo.attributes.some(attr => 
+    const hasId = classInfo.attributes.some(attr =>
       attr.name.toLowerCase() === 'id'
     );
-    
+
     if (!hasId) {
       attrs.push({
         name: "id",
         type: "Integer"
       });
     }
-    
+
     // Convertir atributos
     classInfo.attributes.forEach(attr => {
       attrs.push({
@@ -499,13 +598,13 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
         type: attr.type || "String"
       });
     });
-    
+
     // Convertir métodos (opcional)
     classInfo.methods?.forEach(method => {
-      const paramStr = method.parameters 
+      const paramStr = method.parameters
         ? method.parameters.map(p => `${p.name}: ${p.type}`).join(", ")
         : "";
-      
+
       attrs.push({
         name: `${method.name}(${paramStr})`,
         type: method.returnType || "void",
@@ -523,7 +622,7 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
 
   // Convertir relaciones a aristas
   console.log("Procesando relaciones:", diagramInfo.relations?.length || 0);
-  
+
   diagramInfo.relations?.forEach((relation, index) => {
     console.log(`Relación ${index + 1}:`, {
       from: relation.from,
@@ -551,20 +650,36 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
       return;
     }
 
-    // Calcular handles óptimos basados en posiciones, considerando handles ya ocupados
-    const sourceHandle = getBestHandleForConnection(
-      sourceNode.position, 
-      targetNode.position, 
-      true, 
-      handleUsage[sourceId]?.source
-    );
-    const targetHandle = getBestHandleForConnection(
-      sourceNode.position, 
-      targetNode.position, 
-      false, 
-      handleUsage[targetId]?.target
-    );
-    
+    // Calcular handles basados en las posiciones de conexión detectadas por la IA
+    // Si la IA detectó sourcePosition/targetPosition, usarlos directamente
+    let sourceHandle, targetHandle;
+
+    if (relation.sourcePosition) {
+      // Usar la posición detectada por la IA
+      sourceHandle = getHandleFromPosition(relation.sourcePosition, true, handleUsage[sourceId]?.source);
+    } else {
+      // Fallback: calcular basado en posiciones de nodos
+      sourceHandle = getBestHandleForConnection(
+        sourceNode.position,
+        targetNode.position,
+        true,
+        handleUsage[sourceId]?.source
+      );
+    }
+
+    if (relation.targetPosition) {
+      // Usar la posición detectada por la IA
+      targetHandle = getHandleFromPosition(relation.targetPosition, false, handleUsage[targetId]?.target);
+    } else {
+      // Fallback: calcular basado en posiciones de nodos
+      targetHandle = getBestHandleForConnection(
+        sourceNode.position,
+        targetNode.position,
+        false,
+        handleUsage[targetId]?.target
+      );
+    }
+
     // Marcar handles como ocupados
     handleUsage[sourceId]?.source.add(sourceHandle);
     handleUsage[targetId]?.target.add(targetHandle);
@@ -619,20 +734,20 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
     if (isMany(mFrom) && isMany(mTo)) {
       // Relación N-M: requiere tabla intermedia
       relType = "N-M";
-      
+
       // Verificar si la IA detectó que necesita tabla intermedia
       if (relation.requiresJoinTable !== false) {
         // Crear tabla intermedia
-        const joinTableName = relation.suggestedJoinTableName || 
-                             `${relation.from}_${relation.to}`;
+        const joinTableName = relation.suggestedJoinTableName ||
+          `${relation.from}_${relation.to}`;
         const joinNodeId = `node-join-${Date.now()}-${index}`;
-        
+
         classNameToId[joinTableName] = joinNodeId;
 
         // Calcular posición de la tabla intermedia (punto medio entre las dos clases)
         const sourceNode = nodes.find(n => classNameToId[relation.from] === n.id);
         const targetNode = nodes.find(n => classNameToId[relation.to] === n.id);
-        
+
         let joinPosition = { x: 300, y: 300 };
         if (sourceNode?.position && targetNode?.position) {
           joinPosition = {
@@ -653,7 +768,7 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
           position: joinPosition,
           isJoinTable: true
         });
-        
+
         // Inicializar registro de handles para la tabla intermedia
         handleUsage[joinNodeId] = {
           source: new Set(),
@@ -662,31 +777,31 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
 
         // Calcular handles para las relaciones con la tabla intermedia, considerando handles ocupados
         const sourceToJoinSourceHandle = getBestHandleForConnection(
-          sourceNode.position, 
-          joinPosition, 
-          true, 
+          sourceNode.position,
+          joinPosition,
+          true,
           handleUsage[sourceId]?.source
         );
         const sourceToJoinTargetHandle = getBestHandleForConnection(
-          sourceNode.position, 
-          joinPosition, 
-          false, 
+          sourceNode.position,
+          joinPosition,
+          false,
           handleUsage[joinNodeId]?.target
         );
-        
+
         const targetToJoinSourceHandle = getBestHandleForConnection(
-          targetNode.position, 
-          joinPosition, 
-          true, 
+          targetNode.position,
+          joinPosition,
+          true,
           handleUsage[targetId]?.source
         );
         const targetToJoinTargetHandle = getBestHandleForConnection(
-          targetNode.position, 
-          joinPosition, 
-          false, 
+          targetNode.position,
+          joinPosition,
+          false,
           handleUsage[joinNodeId]?.target
         );
-        
+
         // Marcar handles como ocupados
         handleUsage[sourceId]?.source.add(sourceToJoinSourceHandle);
         handleUsage[joinNodeId]?.target.add(sourceToJoinTargetHandle);
@@ -779,17 +894,17 @@ export function convertMultipleClassesToDiagramFormat(diagramInfo, canvasSize = 
 export async function processImageAndCreateDiagram(imageFile, onSuccess, onError) {
   try {
     console.log("Procesando diagrama UML completo...");
-    
+
     // Procesar imagen con Gemini Vision
     const diagramInfo = await processMultipleUMLClassesImage(imageFile);
-    
+
     console.log("Información extraída:", diagramInfo);
-    
+
     // Convertir a formato del diagramador
     const diagramData = convertMultipleClassesToDiagramFormat(diagramInfo);
-    
+
     console.log("Datos del diagrama:", diagramData);
-    
+
     // Llamar al callback de éxito
     if (onSuccess) {
       onSuccess({
@@ -797,20 +912,20 @@ export async function processImageAndCreateDiagram(imageFile, onSuccess, onError
         diagramData: diagramData
       });
     }
-    
+
     return {
       originalDiagramInfo: diagramInfo,
       diagramData: diagramData
     };
-    
+
   } catch (error) {
     console.error("Error procesando diagrama completo:", error);
-    
+
     // Llamar al callback de error
     if (onError) {
       onError(error);
     }
-    
+
     throw error;
   }
 }
@@ -824,17 +939,17 @@ export async function processImageAndCreateDiagram(imageFile, onSuccess, onError
 export async function processImageAndCreateEntity(imageFile, onSuccess, onError) {
   try {
     console.log("Procesando imagen UML...");
-    
+
     // Procesar imagen con Gemini Vision
     const classInfo = await processUMLClassImage(imageFile);
-    
+
     console.log("Información extraída:", classInfo);
-    
+
     // Convertir a formato del diagramador
     const entityData = convertTodiagramFormat(classInfo);
-    
+
     console.log("Datos de entidad:", entityData);
-    
+
     // Llamar al callback de éxito
     if (onSuccess) {
       onSuccess({
@@ -842,20 +957,20 @@ export async function processImageAndCreateEntity(imageFile, onSuccess, onError)
         entityData: entityData
       });
     }
-    
+
     return {
       originalClassInfo: classInfo,
       entityData: entityData
     };
-    
+
   } catch (error) {
     console.error("Error procesando imagen:", error);
-    
+
     // Llamar al callback de error
     if (onError) {
       onError(error);
     }
-    
+
     throw error;
   }
 }

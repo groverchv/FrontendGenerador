@@ -212,6 +212,35 @@ flutter:
   uses-material-design: true
 `;
 
+  // analysis_options.yaml - OBLIGATORIO para evitar errores de lint
+  const analysisOptions = `# This file configures the static analysis results for your project
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Reglas permisivas para código generado
+    prefer_const_constructors: false
+    prefer_const_declarations: false
+    prefer_const_literals_to_create_immutables: false
+    avoid_print: false
+    use_key_in_widget_constructors: false
+    prefer_final_fields: false
+    unnecessary_this: false
+    curly_braces_in_flow_control_structures: false
+    prefer_interpolation_to_compose_strings: false
+    avoid_unnecessary_containers: false
+    sized_box_for_whitespace: false
+    use_build_context_synchronously: false
+
+analyzer:
+  errors:
+    # Tratar warnings como info para no bloquear builds
+    missing_return: warning
+    dead_code: info
+    unused_local_variable: info
+    unused_import: info
+`;
+
   // main.dart
   const mainDart = `import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -247,86 +276,86 @@ class ${appClass}App extends StatelessWidget {
 
   // api_client.dart - Usar concatenación para evitar confusión con template literals
   const apiClient = "import 'package:http/http.dart' as http;\n" +
-"import 'dart:convert';\n" +
-"\n" +
-"class ApiClient {\n" +
-"  static const String baseUrl = '" + backendUrl + "/api';\n" +
-"\n" +
-"  /// GET request\n" +
-"  Future<dynamic> get(String endpoint) async {\n" +
-"    try {\n" +
-"      final response = await http.get(\n" +
-"        Uri.parse('$baseUrl$endpoint'),\n" +
-"        headers: {'Content-Type': 'application/json'},\n" +
-"      );\n" +
-"      \n" +
-"      if (response.statusCode >= 200 && response.statusCode < 300) {\n" +
-"        if (response.body.isEmpty) return null;\n" +
-"        return json.decode(response.body);\n" +
-"      } else {\n" +
-"        throw Exception('Error ${response.statusCode}: ${response.body}');\n" +
-"      }\n" +
-"    } catch (e) {\n" +
-"      throw Exception('Error de conexión: $e');\n" +
-"    }\n" +
-"  }\n" +
-"\n" +
-"  /// POST request\n" +
-"  Future<dynamic> post(String endpoint, Map<String, dynamic> data) async {\n" +
-"    try {\n" +
-"      final response = await http.post(\n" +
-"        Uri.parse('$baseUrl$endpoint'),\n" +
-"        headers: {'Content-Type': 'application/json'},\n" +
-"        body: json.encode(data),\n" +
-"      );\n" +
-"      \n" +
-"      if (response.statusCode >= 200 && response.statusCode < 300) {\n" +
-"        if (response.body.isEmpty) return null;\n" +
-"        return json.decode(response.body);\n" +
-"      } else {\n" +
-"        throw Exception('Error ${response.statusCode}: ${response.body}');\n" +
-"      }\n" +
-"    } catch (e) {\n" +
-"      throw Exception('Error de conexión: $e');\n" +
-"    }\n" +
-"  }\n" +
-"\n" +
-"  /// PUT request\n" +
-"  Future<dynamic> put(String endpoint, int id, Map<String, dynamic> data) async {\n" +
-"    try {\n" +
-"      final response = await http.put(\n" +
-"        Uri.parse('$baseUrl$endpoint/$id'),\n" +
-"        headers: {'Content-Type': 'application/json'},\n" +
-"        body: json.encode(data),\n" +
-"      );\n" +
-"      \n" +
-"      if (response.statusCode >= 200 && response.statusCode < 300) {\n" +
-"        if (response.body.isEmpty) return null;\n" +
-"        return json.decode(response.body);\n" +
-"      } else {\n" +
-"        throw Exception('Error ${response.statusCode}: ${response.body}');\n" +
-"      }\n" +
-"    } catch (e) {\n" +
-"      throw Exception('Error de conexión: $e');\n" +
-"    }\n" +
-"  }\n" +
-"\n" +
-"  /// DELETE request\n" +
-"  Future<void> delete(String endpoint, int id) async {\n" +
-"    try {\n" +
-"      final response = await http.delete(\n" +
-"        Uri.parse('$baseUrl$endpoint/$id'),\n" +
-"        headers: {'Content-Type': 'application/json'},\n" +
-"      );\n" +
-"      \n" +
-"      if (response.statusCode < 200 || response.statusCode >= 300) {\n" +
-"        throw Exception('Error ${response.statusCode}: ${response.body}');\n" +
-"      }\n" +
-"    } catch (e) {\n" +
-"      throw Exception('Error de conexión: $e');\n" +
-"    }\n" +
-"  }\n" +
-"}\n";
+    "import 'dart:convert';\n" +
+    "\n" +
+    "class ApiClient {\n" +
+    "  static const String baseUrl = '" + backendUrl + "/api';\n" +
+    "\n" +
+    "  /// GET request\n" +
+    "  Future<dynamic> get(String endpoint) async {\n" +
+    "    try {\n" +
+    "      final response = await http.get(\n" +
+    "        Uri.parse('$baseUrl$endpoint'),\n" +
+    "        headers: {'Content-Type': 'application/json'},\n" +
+    "      );\n" +
+    "      \n" +
+    "      if (response.statusCode >= 200 && response.statusCode < 300) {\n" +
+    "        if (response.body.isEmpty) return null;\n" +
+    "        return json.decode(response.body);\n" +
+    "      } else {\n" +
+    "        throw Exception('Error ${response.statusCode}: ${response.body}');\n" +
+    "      }\n" +
+    "    } catch (e) {\n" +
+    "      throw Exception('Error de conexión: $e');\n" +
+    "    }\n" +
+    "  }\n" +
+    "\n" +
+    "  /// POST request\n" +
+    "  Future<dynamic> post(String endpoint, Map<String, dynamic> data) async {\n" +
+    "    try {\n" +
+    "      final response = await http.post(\n" +
+    "        Uri.parse('$baseUrl$endpoint'),\n" +
+    "        headers: {'Content-Type': 'application/json'},\n" +
+    "        body: json.encode(data),\n" +
+    "      );\n" +
+    "      \n" +
+    "      if (response.statusCode >= 200 && response.statusCode < 300) {\n" +
+    "        if (response.body.isEmpty) return null;\n" +
+    "        return json.decode(response.body);\n" +
+    "      } else {\n" +
+    "        throw Exception('Error ${response.statusCode}: ${response.body}');\n" +
+    "      }\n" +
+    "    } catch (e) {\n" +
+    "      throw Exception('Error de conexión: $e');\n" +
+    "    }\n" +
+    "  }\n" +
+    "\n" +
+    "  /// PUT request\n" +
+    "  Future<dynamic> put(String endpoint, int id, Map<String, dynamic> data) async {\n" +
+    "    try {\n" +
+    "      final response = await http.put(\n" +
+    "        Uri.parse('$baseUrl$endpoint/$id'),\n" +
+    "        headers: {'Content-Type': 'application/json'},\n" +
+    "        body: json.encode(data),\n" +
+    "      );\n" +
+    "      \n" +
+    "      if (response.statusCode >= 200 && response.statusCode < 300) {\n" +
+    "        if (response.body.isEmpty) return null;\n" +
+    "        return json.decode(response.body);\n" +
+    "      } else {\n" +
+    "        throw Exception('Error ${response.statusCode}: ${response.body}');\n" +
+    "      }\n" +
+    "    } catch (e) {\n" +
+    "      throw Exception('Error de conexión: $e');\n" +
+    "    }\n" +
+    "  }\n" +
+    "\n" +
+    "  /// DELETE request\n" +
+    "  Future<void> delete(String endpoint, int id) async {\n" +
+    "    try {\n" +
+    "      final response = await http.delete(\n" +
+    "        Uri.parse('$baseUrl$endpoint/$id'),\n" +
+    "        headers: {'Content-Type': 'application/json'},\n" +
+    "      );\n" +
+    "      \n" +
+    "      if (response.statusCode < 200 || response.statusCode >= 300) {\n" +
+    "        throw Exception('Error ${response.statusCode}: ${response.body}');\n" +
+    "      }\n" +
+    "    } catch (e) {\n" +
+    "      throw Exception('Error de conexión: $e');\n" +
+    "    }\n" +
+    "  }\n" +
+    "}\n";
 
   // home_page.dart
   const homePage = `import 'package:flutter/material.dart';
@@ -805,6 +834,7 @@ app.*.map.json
     "LEEME.txt": leeme,
     // Archivos del proyecto
     "pubspec.yaml": pubspec,
+    "analysis_options.yaml": analysisOptions,
     "lib/main.dart": mainDart,
     "lib/data/api/api_client.dart": apiClient,
     "lib/ui/pages/home_page.dart": homePage,
